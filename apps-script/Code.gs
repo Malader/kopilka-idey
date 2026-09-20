@@ -13,7 +13,7 @@ var CONFIG = {
   SHEET_NAME: 'Заявки',
 
   // Кому приходит письмо о новой заявке. Можно несколько через запятую.
-  NOTIFY_EMAILS: 'ideas@example.ru',
+  NOTIFY_EMAILS: 'malyshevgpt4@gmail.com',
 
   // Отправлять автору идеи письмо «спасибо, заявка принята».
   SEND_CONFIRMATION: true,
