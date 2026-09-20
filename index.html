@@ -931,7 +931,17 @@
         data.website = form.elements['website'].value;
         data.elapsed = Math.round((Date.now() - openedAt) / 1000);
         data.page = location.href;
+        // одноразовый номер отправки: основной и запасной путь используют один
+        // и тот же, поэтому сервер отличит повтор от новой заявки
+        data.submissionId = newId();
         return data;
+      }
+
+      function newId() {
+        try {
+          if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+        } catch (e) {}
+        return String(Date.now()) + '-' + Math.random().toString(36).slice(2, 10);
       }
 
       function setLoading(on) {

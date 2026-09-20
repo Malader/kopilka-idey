@@ -74,11 +74,16 @@ function doPost(e) {
       return json_({ ok: false, error: 'Не заполнены обязательные поля: ' + missing.join(', ') });
     }
 
-    var number = saveRow_(data);
-    notifyTeam_(data, number);
-    if (CONFIG.SEND_CONFIRMATION) notifyAuthor_(data, number);
+    var saved = saveRow_(data);
 
-    return json_({ ok: true, number: number });
+    // повтор той же отправки (запасной путь сработал поверх основного):
+    // строка уже есть, второй раз писать и слать письма не нужно
+    if (!saved.duplicate) {
+      notifyTeam_(data, saved.number);
+      if (CONFIG.SEND_CONFIRMATION) notifyAuthor_(data, saved.number);
+    }
+
+    return json_({ ok: true, number: saved.number, duplicate: saved.duplicate });
   } catch (err) {
     logError_(err, e);
     return json_({ ok: false, error: 'Внутренняя ошибка сервиса. Попробуйте ещё раз позже.' });
@@ -112,8 +117,17 @@ function sheet_() {
 
 function saveRow_(data) {
   var lock = LockService.getScriptLock();
-  lock.waitLock(20000);
+  lock.waitLock(25000);
   try {
+    var cache = CacheService.getScriptCache();
+    var key = clean_(data.submissionId) ? 'sub_' + clean_(data.submissionId) : '';
+
+    // ту же отправку второй раз не записываем, возвращаем номер первой
+    if (key) {
+      var seen = cache.get(key);
+      if (seen) return { number: Number(seen), duplicate: true };
+    }
+
     var sh = sheet_();
     var number = sh.getLastRow(); // строка заголовка занимает первую, поэтому это и есть номер заявки
 
@@ -126,7 +140,9 @@ function saveRow_(data) {
     sh.getRange(last, 1, 1, row.length).setVerticalAlignment('top').setWrap(true);
     sh.getRange(last, 2).setNumberFormat('dd.MM.yyyy HH:mm');
 
-    return number;
+    if (key) cache.put(key, String(number), 1800);
+
+    return { number: number, duplicate: false };
   } finally {
     lock.releaseLock();
   }
@@ -267,7 +283,8 @@ function testSubmit() {
         participation: 'Готов(а) консультировать',
         materials: '',
         consent: 'Да',
-        elapsed: 30
+        elapsed: 30,
+        submissionId: 'test-' + new Date().getTime()
       })
     }
   };
