@@ -1,0 +1,1069 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Копилка идей, форма подачи</title>
+  <meta name="description" content="Предложите свою идею: как улучшить процессы, сократить затраты или запустить новый продукт.">
+  <meta property="og:title" content="Копилка идей">
+  <meta property="og:description" content="Предложите свою идею: как улучшить процессы, сократить затраты или запустить новый продукт.">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cg fill='none' stroke='%231769e8' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18.5 32h11M20 36h8M22 40h4'/%3E%3Cpath d='M17.6 27.7c-2.4-1.8-4-4.7-4-7.9C13.6 14 18.3 9.3 24 9.3S34.4 14 34.4 19.8c0 3.2-1.5 6-4 7.9-1.1.9-1.8 1.9-2.1 3.1h-8.6c-.3-1.2-1-2.2-2.1-3.1Z'/%3E%3Cpath d='M24 2.8v3.1M7.2 19.6H4M44 19.6h-3.2M12 7.5l2.2 2.2M36 7.5l-2.2 2.2'/%3E%3C/g%3E%3C/svg%3E">
+  <style>
+    :root {
+      --bg: #f6f8fb;
+      --card: #ffffff;
+      --text: #13233f;
+      --muted: #7f8da6;
+      --border: #d9e0eb;
+      --border-strong: #cbd5e3;
+      --primary: #1769e8;
+      --primary-hover: #0f5fd6;
+      --danger: #ff4d4f;
+      --shadow: 0 8px 28px rgba(27, 49, 83, 0.08);
+      --radius: 16px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      background:
+        radial-gradient(circle at top left, rgba(40, 119, 255, 0.045), transparent 30%),
+        var(--bg);
+      color: var(--text);
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .page {
+      width: min(1100px, calc(100% - 32px));
+      margin: 18px auto;
+    }
+
+    .form-card {
+      overflow: hidden;
+      background: var(--card);
+      border: 1px solid #e9edf4;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .form-body {
+      padding: 28px 26px 16px;
+    }
+
+    .header {
+      display: flex;
+      align-items: flex-start;
+      gap: 18px;
+      margin-bottom: 30px;
+    }
+
+    .header-icon {
+      width: 72px;
+      height: 72px;
+      flex: 0 0 auto;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: #edf5ff;
+      color: var(--primary);
+    }
+
+    .header h1 {
+      margin: 3px 0 7px;
+      font-size: 32px;
+      line-height: 1.08;
+      letter-spacing: -0.03em;
+      font-weight: 800;
+    }
+
+    .header p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.45;
+      font-weight: 500;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+
+    .field {
+      margin-bottom: 20px;
+    }
+
+    .field label,
+    .field .field-title {
+      display: block;
+      margin-bottom: 9px;
+      font-size: 15px;
+      line-height: 1.25;
+      font-weight: 750;
+    }
+
+    .required {
+      color: var(--danger);
+    }
+
+    .optional {
+      color: #7c8aa0;
+      font-weight: 600;
+    }
+
+    input[type="text"],
+    input[type="email"],
+    select,
+    textarea {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--text);
+      font: inherit;
+      font-size: 15px;
+      outline: none;
+      transition: border-color .18s, box-shadow .18s;
+    }
+
+    input[type="text"],
+    input[type="email"],
+    select {
+      height: 44px;
+      padding: 0 16px;
+    }
+
+    textarea {
+      min-height: 100px;
+      padding: 14px 16px;
+      resize: vertical;
+      line-height: 1.5;
+    }
+
+    input::placeholder,
+    textarea::placeholder {
+      color: #9aa7ba;
+      opacity: 1;
+    }
+
+    input:focus,
+    textarea:focus,
+    select:focus {
+      border-color: #6aa7ff;
+      box-shadow: 0 0 0 3px rgba(23, 105, 232, .10);
+    }
+
+    .topic-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .choice-card {
+      position: relative;
+      min-height: 72px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 12px 12px 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: border-color .18s, box-shadow .18s, background .18s;
+      user-select: none;
+    }
+
+    .choice-card:hover {
+      border-color: #aac8f5;
+      background: #fbfdff;
+    }
+
+    .choice-card input {
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      margin: 0;
+      flex: 0 0 auto;
+      border: 1.5px solid #bdc7d6;
+      border-radius: 50%;
+      background: #fff;
+      display: grid;
+      place-content: center;
+      cursor: pointer;
+    }
+
+    .choice-card input::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--primary);
+      transform: scale(0);
+      transition: transform .15s;
+    }
+
+    .choice-card input:checked::before {
+      transform: scale(1);
+    }
+
+    .choice-card:has(input:checked) {
+      border-color: #7fb0f7;
+      box-shadow: 0 0 0 2px rgba(23, 105, 232, .08);
+      background: #f8fbff;
+    }
+
+    .choice-card input:focus-visible {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(23, 105, 232, .18);
+    }
+
+    .choice-icon {
+      width: 34px;
+      height: 34px;
+      flex: 0 0 auto;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: #f1f5fa;
+    }
+
+    .choice-icon.blue { color: #1671ef; background: #edf5ff; }
+    .choice-icon.green { color: #54bd52; background: #f0f9ef; }
+    .choice-icon.purple { color: #7a3ff2; background: #f5f0ff; }
+    .choice-icon.orange { color: #ff7b35; background: #fff4ed; }
+    .choice-icon.gray { color: #7c879a; background: #f2f4f7; }
+
+    .choice-text {
+      font-size: 14px;
+      line-height: 1.25;
+      font-weight: 700;
+    }
+
+    .participation-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .participation-grid .choice-card {
+      min-height: 66px;
+    }
+
+    .link-box {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 13px 16px;
+      border: 1.5px dashed var(--border-strong);
+      border-radius: 8px;
+      transition: border-color .18s, background .18s;
+    }
+
+    .link-box:focus-within {
+      border-color: #8fb7ed;
+      background: #fbfdff;
+    }
+
+    .link-box-icon {
+      color: #718096;
+      flex: 0 0 auto;
+    }
+
+    .link-box-body {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    .link-box input {
+      height: 38px;
+      padding: 0 12px;
+      background: #fff;
+    }
+
+    .link-box small {
+      display: block;
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .error-msg {
+      display: none;
+      margin-top: 7px;
+      color: var(--danger);
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .field.has-error .error-msg {
+      display: block;
+    }
+
+    .field.has-error input[type="text"],
+    .field.has-error input[type="email"],
+    .field.has-error select,
+    .field.has-error textarea {
+      border-color: var(--danger);
+      box-shadow: 0 0 0 3px rgba(255, 77, 79, .09);
+    }
+
+    .field.has-error .choice-card {
+      border-color: #ffb9ba;
+    }
+
+    .field.has-error .link-box {
+      border-color: var(--danger);
+    }
+
+    .consent {
+      display: flex;
+      align-items: flex-start;
+      gap: 11px;
+      margin: 22px 0 4px;
+      color: #5f6d84;
+      font-size: 13.5px;
+      line-height: 1.45;
+      font-weight: 500;
+      cursor: pointer;
+    }
+
+    .consent input {
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      margin: 1px 0 0;
+      flex: 0 0 auto;
+      border: 1.5px solid #bdc7d6;
+      border-radius: 5px;
+      background: #fff;
+      display: grid;
+      place-content: center;
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+    }
+
+    .consent input::before {
+      content: "";
+      width: 10px;
+      height: 10px;
+      background: #fff;
+      clip-path: polygon(14% 45%, 0 60%, 39% 100%, 100% 22%, 84% 8%, 37% 70%);
+      transform: scale(0);
+      transition: transform .15s;
+    }
+
+    .consent input:checked {
+      border-color: var(--primary);
+      background: var(--primary);
+    }
+
+    .consent input:checked::before {
+      transform: scale(1);
+    }
+
+    .consent.has-error input {
+      border-color: var(--danger);
+    }
+
+    .consent.has-error span {
+      color: var(--danger);
+    }
+
+    .honeypot {
+      position: absolute;
+      left: -9999px;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 14px 26px;
+      border-top: 1px solid #e7ebf2;
+      background: rgba(252, 253, 255, .9);
+    }
+
+    .footer-note {
+      color: #8794a8;
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .submit-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      min-width: 230px;
+      height: 50px;
+      padding: 0 22px;
+      border: 0;
+      border-radius: 8px;
+      background: linear-gradient(180deg, #1972f0 0%, #0f65e7 100%);
+      box-shadow: 0 6px 14px rgba(23, 105, 232, .22);
+      color: #fff;
+      font: inherit;
+      font-size: 16px;
+      font-weight: 750;
+      cursor: pointer;
+      transition: transform .18s, box-shadow .18s, background .18s;
+    }
+
+    .submit-btn:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 18px rgba(23, 105, 232, .28);
+    }
+
+    .submit-btn:active:not(:disabled) {
+      transform: translateY(0);
+    }
+
+    .submit-btn:disabled {
+      background: #9cb9e4;
+      box-shadow: none;
+      cursor: progress;
+    }
+
+    .spinner {
+      width: 19px;
+      height: 19px;
+      border: 2.2px solid rgba(255, 255, 255, .45);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .send-alert {
+      display: none;
+      margin: 0 26px 16px;
+      padding: 13px 16px;
+      border: 1px solid #ffd4d4;
+      border-radius: 10px;
+      background: #fff5f5;
+      color: #b42026;
+      font-size: 14px;
+      line-height: 1.45;
+      font-weight: 600;
+    }
+
+    .send-alert.visible {
+      display: block;
+    }
+
+    .done {
+      padding: 56px 26px 62px;
+      text-align: center;
+    }
+
+    .done-icon {
+      width: 84px;
+      height: 84px;
+      margin: 0 auto 22px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: #eaf7ec;
+      color: #34a853;
+      animation: pop .35s ease-out;
+    }
+
+    @keyframes pop {
+      from { transform: scale(.7); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+
+    .done h2 {
+      margin: 0 0 10px;
+      font-size: 27px;
+      letter-spacing: -0.02em;
+      font-weight: 800;
+    }
+
+    .done p {
+      max-width: 520px;
+      margin: 0 auto 8px;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.5;
+      font-weight: 500;
+    }
+
+    .done .demo-note {
+      margin-top: 18px;
+      color: #b0781f;
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .again-btn {
+      margin-top: 26px;
+      height: 46px;
+      padding: 0 26px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--text);
+      font: inherit;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: border-color .18s, background .18s;
+    }
+
+    .again-btn:hover {
+      border-color: #aac8f5;
+      background: #fbfdff;
+    }
+
+    @media (max-width: 900px) {
+      .topic-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .participation-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 640px) {
+      .page {
+        width: 100%;
+        margin: 0;
+      }
+
+      .form-card {
+        border-radius: 0;
+        border-left: 0;
+        border-right: 0;
+      }
+
+      .form-body {
+        padding: 22px 16px 14px;
+      }
+
+      .header {
+        gap: 14px;
+        margin-bottom: 24px;
+      }
+
+      .header-icon {
+        width: 56px;
+        height: 56px;
+      }
+
+      .header h1 {
+        font-size: 26px;
+      }
+
+      .grid-2,
+      .topic-grid,
+      .participation-grid {
+        grid-template-columns: 1fr;
+        gap: 0;
+      }
+
+      .topic-grid,
+      .participation-grid {
+        gap: 10px;
+      }
+
+      .choice-card {
+        min-height: 58px;
+      }
+
+      .send-alert {
+        margin: 0 16px 14px;
+      }
+
+      .footer {
+        flex-direction: column;
+        align-items: stretch;
+        padding: 14px 16px 18px;
+      }
+
+      .submit-btn {
+        width: 100%;
+      }
+
+      .done {
+        padding: 44px 18px 50px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <form class="form-card" id="ideaForm" novalidate>
+      <div class="form-body">
+        <header class="header">
+          <div class="header-icon" aria-hidden="true">
+            <svg width="42" height="42" viewBox="0 0 48 48" fill="none">
+              <path d="M18.5 31.5h11M19.5 35.5h9M21.5 39.5h5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+              <path d="M17.6 27.7c-2.4-1.8-4-4.7-4-7.9C13.6 14 18.3 9.3 24 9.3S34.4 14 34.4 19.8c0 3.2-1.5 6-4 7.9-1.1.9-1.8 1.9-2.1 3.1h-8.6c-.3-1.2-1-2.2-2.1-3.1Z" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/>
+              <path d="M24 2.8v3.1M7.2 19.6H4M44 19.6h-3.2M12 7.5l2.2 2.2M36 7.5l-2.2 2.2" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div>
+            <h1>Заполните форму</h1>
+            <p>Опишите свою идею максимально понятно.<br>Это поможет нам быстрее её оценить и реализовать.</p>
+          </div>
+        </header>
+
+        <div class="grid-2">
+          <div class="field" data-field>
+            <label for="fullName">1. ФИО <span class="required">*</span></label>
+            <input id="fullName" name="fullName" type="text" placeholder="Укажите ваше полное имя" autocomplete="name" data-required>
+            <div class="error-msg">Укажите ФИО</div>
+          </div>
+
+          <div class="field" data-field>
+            <label for="email">2. Почта <span class="required">*</span></label>
+            <input id="email" name="email" type="email" placeholder="example@company.ru" autocomplete="email" data-required data-email>
+            <div class="error-msg">Укажите корректный адрес почты</div>
+          </div>
+        </div>
+
+        <div class="field" data-field>
+          <label for="title">3. Напишите название идеи <span class="required">*</span></label>
+          <input id="title" name="title" type="text" placeholder="Короткое и ёмкое название идеи" maxlength="150" data-required>
+          <div class="error-msg">Напишите название идеи</div>
+        </div>
+
+        <div class="field" data-field>
+          <label for="idea">4. Опишите суть идеи <span class="required">*</span></label>
+          <textarea id="idea" name="idea" placeholder="Кратко и понятно опишите, в чём заключается ваша идея." maxlength="4000" data-required></textarea>
+          <div class="error-msg">Опишите суть идеи</div>
+        </div>
+
+        <div class="field" data-field>
+          <label for="problem">5. Какую проблему решает идея? <span class="required">*</span></label>
+          <textarea id="problem" name="problem" placeholder="Опишите проблему или неудобство, которое существует сейчас." maxlength="4000" data-required></textarea>
+          <div class="error-msg">Опишите проблему, которую решает идея</div>
+        </div>
+
+        <fieldset class="field" data-field style="border:0;padding:0;margin-inline:0">
+          <legend class="field-title">6. Выберите тему <span class="required">*</span></legend>
+          <div class="topic-grid">
+            <label class="choice-card">
+              <input type="radio" name="topic" value="Оптимизация процессов" data-required>
+              <span class="choice-icon blue">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                  <path d="M12 8.4a3.6 3.6 0 1 0 0 7.2 3.6 3.6 0 0 0 0-7.2Z" stroke="currentColor" stroke-width="1.8"/>
+                  <path d="M19.1 13.2a7.6 7.6 0 0 0 0-2.4l2-1.5-2-3.4-2.5 1a7.7 7.7 0 0 0-2.1-1.2L14.2 3h-4.4l-.4 2.7c-.8.3-1.5.7-2.1 1.2l-2.5-1-2 3.4 2 1.5a7.6 7.6 0 0 0 0 2.4l-2 1.5 2 3.4 2.5-1c.6.5 1.3.9 2.1 1.2l.4 2.7h4.4l.4-2.7c.8-.3 1.5-.7 2.1-1.2l2.5 1 2-3.4-2.1-1.5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+                </svg>
+              </span>
+              <span class="choice-text">Оптимизация<br>процессов</span>
+            </label>
+
+            <label class="choice-card">
+              <input type="radio" name="topic" value="Сокращение затрат">
+              <span class="choice-icon green">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                  <path d="M12 3v14M7 12l5 5 5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M5 20h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+              </span>
+              <span class="choice-text">Сокращение<br>затрат</span>
+            </label>
+
+            <label class="choice-card">
+              <input type="radio" name="topic" value="Рост ТО">
+              <span class="choice-icon purple">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                  <path d="M4 18h3v2H4v-2Zm6-5h3v7h-3v-7Zm6-5h3v12h-3V8Z" stroke="currentColor" stroke-width="1.6"/>
+                  <path d="m4 13 5-5 4 2 6-6M16 4h3v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </span>
+              <span class="choice-text">Рост ТО</span>
+            </label>
+
+            <label class="choice-card">
+              <input type="radio" name="topic" value="Идеи про продукты">
+              <span class="choice-icon orange">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                  <path d="m12 3 7 4v10l-7 4-7-4V7l7-4Z" stroke="currentColor" stroke-width="1.8"/>
+                  <path d="m5 7 7 4 7-4M12 11v10" stroke="currentColor" stroke-width="1.6"/>
+                </svg>
+              </span>
+              <span class="choice-text">Идеи про<br>продукты</span>
+            </label>
+
+            <label class="choice-card">
+              <input type="radio" name="topic" value="Прочее">
+              <span class="choice-icon gray">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+                  <circle cx="6" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="18" cy="12" r="1.7"/>
+                </svg>
+              </span>
+              <span class="choice-text">Прочее</span>
+            </label>
+          </div>
+          <div class="error-msg">Выберите одну из тем</div>
+        </fieldset>
+
+        <div class="field" data-field>
+          <label for="benefit">7. Что даст или что улучшит идея и почему? <span class="required">*</span></label>
+          <textarea id="benefit" name="benefit" placeholder="Опишите ожидаемый результат. Что станет лучше и почему это важно?" maxlength="4000" data-required></textarea>
+          <div class="error-msg">Опишите, что даст идея</div>
+        </div>
+
+        <div class="field" data-field>
+          <label for="metrics">8. Можно ли оценить эффект в цифрах? <span class="optional">(необязательно)</span></label>
+          <input id="metrics" name="metrics" type="text" maxlength="300" placeholder="Например: экономия 100 часов в месяц, снижение затрат на 500 000 ₽ в год, рост ТО на 5% и т.п.">
+        </div>
+
+        <div class="field" data-field>
+          <label for="resources">9. Какие ресурсы могут понадобиться для реализации? <span class="required">*</span></label>
+          <textarea id="resources" name="resources" placeholder="Укажите, какие ресурсы необходимы (люди, бюджет, технологии, подрядчики, оборудование и др.)&#10;Если можете, укажите примерный объём или стоимость." maxlength="4000" data-required></textarea>
+          <div class="error-msg">Укажите, какие ресурсы нужны</div>
+        </div>
+
+        <div class="grid-2">
+          <div class="field" data-field>
+            <label for="deadline">10. Примерный срок реализации <span class="required">*</span></label>
+            <select id="deadline" name="deadline" data-required>
+              <option value="" selected disabled>Выберите вариант</option>
+              <option>До 1 месяца</option>
+              <option>1–3 месяца</option>
+              <option>3–6 месяцев</option>
+              <option>Более 6 месяцев</option>
+              <option>Пока сложно оценить</option>
+            </select>
+            <div class="error-msg">Выберите срок реализации</div>
+          </div>
+
+          <div class="field" data-field>
+            <label for="lead">11. Кто мог бы стать руководителем проекта? <span class="required">*</span></label>
+            <input id="lead" name="lead" type="text" maxlength="200" placeholder="Укажите ФИО или роль/подразделение" data-required>
+            <div class="error-msg">Укажите возможного руководителя проекта</div>
+          </div>
+        </div>
+
+        <fieldset class="field" data-field style="border:0;padding:0;margin-inline:0">
+          <legend class="field-title">12. Готовы ли вы участвовать в реализации? <span class="required">*</span></legend>
+          <div class="participation-grid">
+            <label class="choice-card">
+              <input type="radio" name="participation" value="Да, готов(а) стать руководителем" data-required>
+              <span class="choice-icon blue">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="8" r="3" stroke="currentColor" stroke-width="1.8"/>
+                  <path d="M5 21c.6-4 3.1-6 7-6s6.4 2 7 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                </svg>
+              </span>
+              <span class="choice-text">Да, готов(а)<br>стать руководителем</span>
+            </label>
+
+            <label class="choice-card">
+              <input type="radio" name="participation" value="Да, готов(а) участвовать в команде">
+              <span class="choice-icon green">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                  <circle cx="9" cy="8" r="3" stroke="currentColor" stroke-width="1.7"/>
+                  <circle cx="16.5" cy="9.5" r="2.3" stroke="currentColor" stroke-width="1.5"/>
+                  <path d="M3.5 20c.5-3.8 2.8-5.7 5.5-5.7 2.8 0 5 1.9 5.5 5.7M14.5 15.5c2.8.1 4.6 1.6 5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                </svg>
+              </span>
+              <span class="choice-text">Да, готов(а)<br>участвовать в команде</span>
+            </label>
+
+            <label class="choice-card">
+              <input type="radio" name="participation" value="Готов(а) консультировать">
+              <span class="choice-icon orange">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                  <path d="M4 5h16v11H9l-5 4V5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+                  <path d="M8 9h8M8 12h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                </svg>
+              </span>
+              <span class="choice-text">Готов(а)<br>консультировать</span>
+            </label>
+
+            <label class="choice-card">
+              <input type="radio" name="participation" value="Нет, хочу только предложить идею">
+              <span class="choice-icon gray">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="8" r="3" stroke="currentColor" stroke-width="1.8"/>
+                  <path d="M5 21c.6-4 3.1-6 7-6s6.4 2 7 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                </svg>
+              </span>
+              <span class="choice-text">Нет, хочу только<br>предложить идею</span>
+            </label>
+          </div>
+          <div class="error-msg">Выберите один из вариантов</div>
+        </fieldset>
+
+        <div class="field" data-field style="margin-bottom:0">
+          <label for="materials">13. Дополнительные материалы <span class="optional">(необязательно)</span></label>
+          <div class="link-box">
+            <span class="link-box-icon" aria-hidden="true">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+                <path d="M8.5 12.5 14.7 6.3a3.2 3.2 0 0 1 4.5 4.5l-8.1 8.1a5 5 0 0 1-7.1-7.1l8.6-8.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+            </span>
+            <div class="link-box-body">
+              <input id="materials" name="materials" type="text" maxlength="500" placeholder="Вставьте ссылку на презентацию, расчёты или изображения">
+              <small>Загрузите файлы на Яндекс.Диск, Облако Mail или в облако компании и вставьте сюда ссылку с открытым доступом.</small>
+            </div>
+          </div>
+        </div>
+
+        <label class="consent" id="consentRow">
+          <input type="checkbox" id="consent" name="consent">
+          <span>Я согласен(на) на обработку указанных мной персональных данных (ФИО и адрес электронной почты) для рассмотрения идеи и обратной связи по ней.</span>
+        </label>
+
+        <input class="honeypot" type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+      </div>
+
+      <div class="send-alert" id="sendAlert" role="alert"></div>
+
+      <footer class="footer">
+        <div class="footer-note">Поля, отмеченные <span class="required">*</span>, обязательны для заполнения.</div>
+        <button class="submit-btn" id="submitBtn" type="submit">
+          <svg id="submitIcon" width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="m21 3-7.2 18-3.5-7.3L3 10.2 21 3Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+            <path d="m10.3 13.7 4.8-4.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+          <span id="submitText">Отправить идею</span>
+        </button>
+      </footer>
+    </form>
+  </main>
+
+  <script>
+    /* ------------------------------------------------------------------
+       НАСТРОЙКА
+       Вставьте сюда адрес веб-приложения Google Apps Script,
+       он выглядит так: https://script.google.com/macros/s/AKfy.../exec
+       Пока строка пустая, форма работает в режиме превью:
+       проверяет заполнение и показывает экран «спасибо», но никуда
+       не отправляет данные.
+    ------------------------------------------------------------------ */
+    var SCRIPT_URL = '';
+
+    (function () {
+      var form = document.getElementById('ideaForm');
+      var card = form;
+      var btn = document.getElementById('submitBtn');
+      var btnText = document.getElementById('submitText');
+      var btnIcon = document.getElementById('submitIcon');
+      var alertBox = document.getElementById('sendAlert');
+      var consentRow = document.getElementById('consentRow');
+      var consent = document.getElementById('consent');
+      var openedAt = Date.now();
+
+      var FIELDS = ['fullName', 'email', 'title', 'idea', 'problem', 'topic', 'benefit',
+        'metrics', 'resources', 'deadline', 'lead', 'participation', 'materials'];
+
+      function fieldOf(el) {
+        return el.closest('[data-field]');
+      }
+
+      function clearErrors() {
+        Array.prototype.forEach.call(form.querySelectorAll('.has-error'), function (n) {
+          n.classList.remove('has-error');
+        });
+        consentRow.classList.remove('has-error');
+        alertBox.classList.remove('visible');
+      }
+
+      function markError(node) {
+        if (node) node.classList.add('has-error');
+      }
+
+      function validate() {
+        var bad = [];
+
+        Array.prototype.forEach.call(form.querySelectorAll('[data-required]'), function (el) {
+          var ok;
+          if (el.type === 'radio') {
+            ok = !!form.querySelector('input[name="' + el.name + '"]:checked');
+          } else {
+            ok = el.value.trim().length > 0;
+          }
+          if (!ok) {
+            var f = fieldOf(el);
+            if (bad.indexOf(f) === -1) bad.push(f);
+            markError(f);
+          }
+        });
+
+        var email = document.getElementById('email');
+        var re = /^[^\s@]+@[^\s@]+\.[a-zA-Zа-яА-Я]{2,}$/;
+        if (email.value.trim() && !re.test(email.value.trim())) {
+          var ef = fieldOf(email);
+          if (bad.indexOf(ef) === -1) bad.push(ef);
+          markError(ef);
+        }
+
+        if (!consent.checked) {
+          consentRow.classList.add('has-error');
+          if (!bad.length) bad.push(consentRow);
+        }
+
+        return bad;
+      }
+
+      function collect() {
+        var data = {};
+        FIELDS.forEach(function (name) {
+          // для групп радиокнопок form.elements[name].value уже отдаёт
+          // значение отмеченной кнопки или пустую строку
+          var el = form.elements[name];
+          data[name] = el ? String(el.value || '').trim() : '';
+        });
+        data.consent = consent.checked ? 'Да' : 'Нет';
+        data.website = form.elements['website'].value;
+        data.elapsed = Math.round((Date.now() - openedAt) / 1000);
+        data.page = location.href;
+        return data;
+      }
+
+      function setLoading(on) {
+        btn.disabled = on;
+        btnText.textContent = on ? 'Отправляем...' : 'Отправить идею';
+        btnIcon.style.display = on ? 'none' : '';
+        var sp = document.getElementById('btnSpinner');
+        if (on && !sp) {
+          sp = document.createElement('span');
+          sp.className = 'spinner';
+          sp.id = 'btnSpinner';
+          btn.insertBefore(sp, btnText);
+        } else if (!on && sp) {
+          sp.remove();
+        }
+      }
+
+      function sendViaIframe(payload) {
+        return new Promise(function (resolve) {
+          var name = 'sink_' + Date.now();
+          var frame = document.createElement('iframe');
+          frame.name = name;
+          frame.style.display = 'none';
+          document.body.appendChild(frame);
+
+          var f = document.createElement('form');
+          f.method = 'POST';
+          f.action = SCRIPT_URL;
+          f.target = name;
+          f.style.display = 'none';
+          Object.keys(payload).forEach(function (k) {
+            var i = document.createElement('input');
+            i.type = 'hidden';
+            i.name = k;
+            i.value = payload[k];
+            f.appendChild(i);
+          });
+          document.body.appendChild(f);
+          f.submit();
+
+          setTimeout(function () {
+            f.remove();
+            frame.remove();
+            resolve();
+          }, 2500);
+        });
+      }
+
+      function send(payload) {
+        return fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify(payload) })
+          .then(function (r) { return r.json(); })
+          .catch(function () {
+            return sendViaIframe(payload).then(function () { return { ok: true, blind: true }; });
+          });
+      }
+
+      function showSuccess(payload, demo) {
+        var safeMail = (payload.email || '').replace(/[<>&"]/g, '');
+        card.innerHTML =
+          '<div class="done">' +
+          '  <div class="done-icon">' +
+          '    <svg width="44" height="44" viewBox="0 0 24 24" fill="none">' +
+          '      <path d="M4.5 12.6 9.6 17.7 19.5 7.2" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>' +
+          '    </svg>' +
+          '  </div>' +
+          '  <h2>Спасибо, идея отправлена</h2>' +
+          '  <p>Мы получили вашу заявку и рассмотрим её в ближайшее время.</p>' +
+          (safeMail ? '  <p>Ответ придёт на адрес <b>' + safeMail + '</b>.</p>' : '') +
+          (demo ? '  <div class="demo-note">Это превью формы. Данные никуда не отправлены.</div>' : '') +
+          '  <button class="again-btn" type="button" id="againBtn">Отправить ещё одну идею</button>' +
+          '</div>';
+        document.getElementById('againBtn').addEventListener('click', function () {
+          location.reload();
+        });
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+
+      function showAlert(text) {
+        alertBox.textContent = text;
+        alertBox.classList.add('visible');
+        alertBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+
+      form.addEventListener('input', function (e) {
+        var f = fieldOf(e.target);
+        if (f) f.classList.remove('has-error');
+        if (e.target === consent) consentRow.classList.remove('has-error');
+      });
+
+      form.addEventListener('change', function (e) {
+        var f = fieldOf(e.target);
+        if (f) f.classList.remove('has-error');
+        if (e.target === consent) consentRow.classList.remove('has-error');
+      });
+
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        clearErrors();
+
+        var bad = validate();
+        if (bad.length) {
+          var first = bad[0];
+          first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          var input = first.querySelector('input, textarea, select');
+          if (input) setTimeout(function () { input.focus({ preventScroll: true }); }, 300);
+          return;
+        }
+
+        var payload = collect();
+        setLoading(true);
+
+        if (!SCRIPT_URL) {
+          setTimeout(function () {
+            setLoading(false);
+            showSuccess(payload, true);
+          }, 600);
+          return;
+        }
+
+        send(payload).then(function (res) {
+          setLoading(false);
+          if (res && res.ok === false) {
+            showAlert(res.error || 'Не удалось отправить заявку. Попробуйте ещё раз.');
+            return;
+          }
+          showSuccess(payload, false);
+        }).catch(function () {
+          setLoading(false);
+          showAlert('Не удалось отправить заявку. Проверьте интернет и попробуйте ещё раз.');
+        });
+      });
+    })();
+  </script>
+</body>
+</html>
