@@ -17,7 +17,7 @@ var CONFIG = {
   SUBS_SHEET_NAME: 'Подписчики',
 
   // Кому приходит письмо о новой заявке. Можно несколько через запятую.
-  NOTIFY_EMAILS: 'v.malyshev@g.nsu.ru',
+  NOTIFY_EMAILS: 'v.malyshev@g.nsu.ru, v.malysheva@greenway.group',
 
   // Отправлять автору идеи письмо «спасибо, заявка принята».
   SEND_CONFIRMATION: true,
