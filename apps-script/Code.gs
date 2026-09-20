@@ -1,5 +1,6 @@
 /**
- * «Копилка идей»: приём заявок с формы в Google Таблицу + письмо ответственным.
+ * «Копилка идей»: приём заявок с формы в Google Таблицу,
+ * письмо ответственным и рассылка в телеграм подписчикам бота.
  *
  * Куда вставлять: Google Таблица -> Расширения -> Apps Script -> заменить
  * содержимое файла Code.gs на этот текст -> Сохранить -> Развернуть.
@@ -9,8 +10,11 @@
 /* =====================  НАСТРОЙКИ  ===================== */
 
 var CONFIG = {
-  // Название листа в таблице. Если листа нет, он создастся сам.
+  // Название листа с заявками. Если листа нет, он создастся сам.
   SHEET_NAME: 'Заявки',
+
+  // Название листа со списком подписчиков телеграм-бота.
+  SUBS_SHEET_NAME: 'Подписчики',
 
   // Кому приходит письмо о новой заявке. Можно несколько через запятую.
   NOTIFY_EMAILS: 'v.malyshev@g.nsu.ru',
@@ -23,14 +27,25 @@ var CONFIG = {
 
   // Минимальное время заполнения формы в секундах.
   // Всё, что отправлено быстрее, считается ботом. 0 выключает проверку.
-  MIN_SECONDS: 4
+  MIN_SECONDS: 4,
 
-  // Телеграм настраивается не здесь, а в свойствах скрипта
-  // (Настройки проекта -> Свойства скрипта): TELEGRAM_TOKEN и TELEGRAM_CHAT_ID.
-  // Токен бота не место в коде, который лежит в публичном репозитории.
-  // Как настроить: впишите токен в TELEGRAM_TOKEN, напишите боту любое
-  // сообщение и запустите функцию podklyuchitTelegram (см. в конце файла).
+  // Как часто бот проверяет команды подписчиков, в минутах.
+  TELEGRAM_POLL_MINUTES: 1,
+
+  // Сколько последних заявок показывает команда /last.
+  TELEGRAM_LAST_COUNT: 5
 };
+
+/* Токен бота и служебные значения лежат в свойствах скрипта
+   (Настройки проекта -> Свойства скрипта), а не в коде, потому что
+   репозиторий публичный:
+
+     TELEGRAM_TOKEN   строка от @BotFather вида 1234567890:AAE...
+     TELEGRAM_PAROL   необязательно: кодовое слово для подписки.
+                      Если заполнено, подписаться можно только
+                      командой «/start слово».
+     TELEGRAM_OFFSET  служебное, скрипт ведёт сам, руками не трогать.
+*/
 
 /* ============  СООТВЕТСТВИЕ ПОЛЕЙ И КОЛОНОК  ============ */
 
@@ -84,8 +99,8 @@ function doPost(e) {
 
     // Повтор той же отправки (запасной путь сработал поверх основного):
     // строка уже есть, второй раз писать и слать уведомления не нужно.
-    // Сами уведомления обёрнуты в safely_: заявка уже в таблице, и сбой
-    // письма или телеграма не должен возвращать человеку ошибку.
+    // Уведомления обёрнуты в safely_: заявка уже в таблице, и сбой письма
+    // или телеграма не должен возвращать человеку ошибку.
     if (!saved.duplicate) {
       safely_(function () { notifyTelegram_(data, saved.number); });
       safely_(function () { notifyTeam_(data, saved.number); });
@@ -211,7 +226,7 @@ function notifyAuthor_(data, number) {
     { name: CONFIG.PROJECT_NAME, htmlBody: html });
 }
 
-/* =====================  ТЕЛЕГРАМ  ===================== */
+/* =====================  ТЕЛЕГРАМ: ОСНОВА  ===================== */
 
 function tgProp_(name) {
   try {
@@ -238,12 +253,99 @@ function tgCall_(method, payload) {
     payload: JSON.stringify(payload || {}),
     muteHttpExceptions: true
   });
-  return JSON.parse(res.getContentText());
+
+  try {
+    return JSON.parse(res.getContentText());
+  } catch (err) {
+    return { ok: false, description: res.getContentText().slice(0, 300) };
+  }
 }
 
-function notifyTelegram_(data, number) {
-  if (!tgToken_() || !tgProp_('TELEGRAM_CHAT_ID')) return; // не настроен, молча пропускаем
+function tgSend_(chatId, text) {
+  return tgCall_('sendMessage', {
+    chat_id: String(chatId),
+    text: text,
+    parse_mode: 'HTML',
+    disable_web_page_preview: true
+  });
+}
 
+/* =====================  ТЕЛЕГРАМ: ПОДПИСЧИКИ  ===================== */
+
+function subsSheet_() {
+  var ss = SpreadsheetApp.getActive();
+  var sh = ss.getSheetByName(CONFIG.SUBS_SHEET_NAME);
+  if (!sh) sh = ss.insertSheet(CONFIG.SUBS_SHEET_NAME);
+
+  if (sh.getLastRow() === 0) {
+    sh.appendRow(['Chat ID', 'Имя', 'Ник', 'Подписан', 'Статус']);
+    sh.getRange(1, 1, 1, 5).setFontWeight('bold').setBackground('#edf5ff');
+    sh.setFrozenRows(1);
+    sh.setColumnWidth(1, 130);
+    sh.setColumnWidth(2, 220);
+    sh.setColumnWidth(3, 160);
+    sh.setColumnWidth(4, 140);
+    sh.setColumnWidth(5, 170);
+  }
+  return sh;
+}
+
+function subsAll_() {
+  var sh = subsSheet_();
+  if (sh.getLastRow() < 2) return [];
+
+  return sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues().map(function (r, i) {
+    return { row: i + 2, id: String(r[0]).trim(), name: r[1], nick: r[2], status: String(r[4]).trim() };
+  }).filter(function (s) { return s.id; });
+}
+
+function subsActive_() {
+  return subsAll_().filter(function (s) { return s.status === 'активен'; });
+}
+
+function subsFind_(chatId) {
+  var id = String(chatId);
+  var found = subsAll_().filter(function (s) { return s.id === id; });
+  return found.length ? found[0] : null;
+}
+
+function subsSetStatus_(row, status) {
+  subsSheet_().getRange(row, 5).setValue(status);
+}
+
+function subsAdd_(chat) {
+  var sh = subsSheet_();
+  var name = ((chat.first_name || '') + ' ' + (chat.last_name || '')).trim() || chat.title || 'без имени';
+  sh.appendRow([
+    String(chat.id),
+    name,
+    chat.username ? '@' + chat.username : '',
+    new Date(),
+    'активен'
+  ]);
+  sh.getRange(sh.getLastRow(), 4).setNumberFormat('dd.MM.yyyy HH:mm');
+}
+
+/* =====================  ТЕЛЕГРАМ: РАССЫЛКА ЗАЯВОК  ===================== */
+
+function notifyTelegram_(data, number) {
+  if (!tgToken_()) return;
+
+  var subs = subsActive_();
+  if (!subs.length) return;
+
+  var text = zayavkaText_(data, number);
+
+  subs.forEach(function (s) {
+    var res = tgSend_(s.id, text);
+    // 403 это «бот заблокирован» или «чат удалён»: помечаем и больше не дёргаем
+    if (res && res.ok === false && (res.error_code === 403 || res.error_code === 400)) {
+      subsSetStatus_(s.row, 'недоступен');
+    }
+  });
+}
+
+function zayavkaText_(data, number) {
   var line = function (label, key, limit) {
     var v = clean_(data[key]);
     if (!v) return '';
@@ -270,13 +372,137 @@ function notifyTelegram_(data, number) {
     '\n\n<a href="' + SpreadsheetApp.getActive().getUrl() + '">Открыть таблицу заявок</a>';
 
   if (text.length > 4000) text = text.slice(0, 3900) + '\n\n[сообщение обрезано, подробности в таблице]';
+  return text;
+}
 
-  tgCall_('sendMessage', {
-    chat_id: tgProp_('TELEGRAM_CHAT_ID'),
-    text: text,
-    parse_mode: 'HTML',
-    disable_web_page_preview: true
+/* =====================  ТЕЛЕГРАМ: КОМАНДЫ  ===================== */
+
+/**
+ * Запускается по расписанию (триггер ставит podklyuchitTelegram).
+ * Забирает новые сообщения боту и отвечает на команды.
+ */
+function obrabotatKomandy() {
+  if (!tgToken_()) return;
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) return; // предыдущий запуск ещё работает
+
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var offset = Number(props.getProperty('TELEGRAM_OFFSET') || 0);
+
+    var res = tgCall_('getUpdates', { offset: offset, timeout: 0, allowed_updates: ['message'] });
+    if (!res || !res.ok) return;
+
+    var list = res.result || [];
+    if (!list.length) return;
+
+    list.forEach(function (u) {
+      if (u.update_id >= offset) offset = u.update_id + 1;
+      if (u.message) safely_(function () { obrabotatSoobshchenie_(u.message); });
+    });
+
+    props.setProperty('TELEGRAM_OFFSET', String(offset));
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function obrabotatSoobshchenie_(m) {
+  var chat = m.chat;
+  if (!chat || !chat.id) return;
+
+  var text = String(m.text || '').trim();
+  var cmd = text.split(/\s+/)[0].toLowerCase().replace(/@.*$/, '');
+  var arg = text.slice(text.split(/\s+/)[0].length).trim();
+
+  if (cmd === '/start') return komandaStart_(chat, arg);
+  if (cmd === '/stop') return komandaStop_(chat);
+  if (cmd === '/help' || cmd === '/помощь') return komandaHelp_(chat);
+  if (cmd === '/last' || cmd === '/последние') return komandaLast_(chat);
+
+  tgSend_(chat.id, 'Не понял команду. Напишите /help, чтобы увидеть список.');
+}
+
+function komandaStart_(chat, arg) {
+  var parol = tgProp_('TELEGRAM_PAROL');
+  if (parol && arg !== parol) {
+    tgSend_(chat.id,
+      'Подписка на этого бота закрыта кодовым словом.\n' +
+      'Отправьте команду вместе с ним: <code>/start кодовое-слово</code>');
+    return;
+  }
+
+  var found = subsFind_(chat.id);
+
+  if (found && found.status === 'активен') {
+    tgSend_(chat.id, 'Вы уже подписаны. Новые идеи приходят сюда сразу после отправки формы.');
+    return;
+  }
+
+  if (found) {
+    subsSetStatus_(found.row, 'активен');
+  } else {
+    subsAdd_(chat);
+  }
+
+  tgSend_(chat.id,
+    '<b>Подписка оформлена</b>\n' +
+    'Каждая новая идея из формы будет приходить сюда: кто предложил, ' +
+    'по какой теме, в чём суть и что она даст.\n\n' +
+    '/last показать последние заявки\n' +
+    '/stop отписаться\n' +
+    '/help что умеет бот');
+}
+
+function komandaStop_(chat) {
+  var found = subsFind_(chat.id);
+
+  if (!found || found.status !== 'активен') {
+    tgSend_(chat.id, 'Вы и так не подписаны. Чтобы снова получать идеи, отправьте /start.');
+    return;
+  }
+
+  subsSetStatus_(found.row, 'отписан');
+  tgSend_(chat.id, 'Отписал. Новые идеи приходить не будут. Вернуться можно командой /start.');
+}
+
+function komandaHelp_(chat) {
+  var sub = subsFind_(chat.id);
+  var state = (sub && sub.status === 'активен') ? 'подписаны' : 'не подписаны';
+
+  tgSend_(chat.id,
+    '<b>' + esc_(CONFIG.PROJECT_NAME) + '</b>\n' +
+    'Бот присылает каждую новую идею, которую сотрудники отправляют через форму.\n\n' +
+    '/start подписаться на новые идеи\n' +
+    '/stop отписаться\n' +
+    '/last последние ' + CONFIG.TELEGRAM_LAST_COUNT + ' заявок\n' +
+    '/help это сообщение\n\n' +
+    'Сейчас вы <b>' + state + '</b>. Всего подписчиков: ' + subsActive_().length + '.');
+}
+
+function komandaLast_(chat) {
+  var sh = sheet_();
+  var total = sh.getLastRow() - 1;
+
+  if (total < 1) {
+    tgSend_(chat.id, 'Заявок пока нет. Как только придёт первая, она сразу прилетит сюда.');
+    return;
+  }
+
+  var n = Math.min(CONFIG.TELEGRAM_LAST_COUNT, total);
+  var values = sh.getRange(sh.getLastRow() - n + 1, 1, n, 2 + FIELDS.length).getValues().reverse();
+  var tz = Session.getScriptTimeZone();
+
+  var lines = values.map(function (r) {
+    var when = (r[1] instanceof Date) ? Utilities.formatDate(r[1], tz, 'dd.MM HH:mm') : String(r[1]);
+    return '<b>№' + r[0] + '</b> ' + esc_(String(r[4])) + '\n' +
+      '<i>' + esc_(when) + ', ' + esc_(String(r[2])) + ', ' + esc_(String(r[7])) + '</i>';
   });
+
+  tgSend_(chat.id,
+    '<b>Последние заявки</b> (всего ' + total + ')\n\n' + lines.join('\n\n') +
+    '\n\n<a href="' + SpreadsheetApp.getActive().getUrl() + '">Открыть таблицу</a>');
 }
 
 /* ===== Настройка телеграма, запускается вручную один раз =====
@@ -284,10 +510,11 @@ function notifyTelegram_(data, number) {
    1. В телеграме напишите @BotFather команду /newbot и придумайте боту имя.
       BotFather пришлёт строку вида 1234567890:AAE... это и есть токен.
    2. Настройки проекта -> Свойства скрипта -> впишите токен в TELEGRAM_TOKEN.
-   3. Напишите своему боту любое сообщение (или добавьте его в группу
-      и напишите там, тогда заявки будут падать в группу).
-   4. Выберите в списке функций podklyuchitTelegram и нажмите «Выполнить».
-      Скрипт сам найдёт чат, запомнит его и пришлёт туда проверочное сообщение.
+   3. Вернитесь в редактор, выберите функцию podklyuchitTelegram и нажмите
+      «Выполнить». Скрипт заведёт лист подписчиков, поставит расписание
+      и напишет ссылку на бота.
+   4. Ссылку раздайте тем, кто должен получать идеи. Каждый жмёт «Запустить»
+      или отправляет /start и попадает в рассылку.
 ============================================================== */
 
 function podklyuchitTelegram() {
@@ -298,45 +525,44 @@ function podklyuchitTelegram() {
     return;
   }
 
-  var upd = tgCall_('getUpdates', {});
-  if (!upd || !upd.ok) {
-    console.log('Телеграм ответил ошибкой. Проверьте токен. Ответ: ' + JSON.stringify(upd));
+  var me = tgCall_('getMe', {});
+  if (!me || !me.ok) {
+    console.log('Телеграм не принял токен. Ответ: ' + JSON.stringify(me));
     return;
   }
 
-  var list = upd.result || [];
-  if (!list.length) {
-    console.log('Телеграм не видит ни одного сообщения боту. Напишите боту любое ' +
-      'сообщение (в группе тоже подойдёт) и запустите функцию ещё раз.');
-    return;
-  }
+  subsSheet_();
+  postavitRaspisanie_();
+  obrabotatKomandy(); // разбираем команды, которые уже успели прислать
 
-  var last = list[list.length - 1];
-  var src = last.message || last.channel_post || last.edited_message || last.my_chat_member || {};
-  var chat = src.chat;
-  if (!chat || !chat.id) {
-    console.log('Не удалось определить чат. Напишите боту обычное текстовое сообщение и повторите.');
-    return;
-  }
-
-  PropertiesService.getScriptProperties().setProperty('TELEGRAM_CHAT_ID', String(chat.id));
-
-  var name = chat.title || chat.username || ((chat.first_name || '') + ' ' + (chat.last_name || '')).trim();
-  var sent = tgCall_('sendMessage', {
-    chat_id: String(chat.id),
-    text: 'Копилка идей подключена. Новые заявки будут приходить сюда.'
-  });
-
-  if (sent && sent.ok) {
-    console.log('Готово. Заявки будут приходить в чат «' + name + '» (id ' + chat.id + ').');
-  } else {
-    console.log('Чат запомнен (id ' + chat.id + '), но проверочное сообщение не ушло: ' + JSON.stringify(sent));
-  }
+  var bot = me.result || {};
+  console.log(
+    'Бот подключён: @' + bot.username + ' («' + (bot.first_name || '') + '»).\n' +
+    'Ссылка для подписчиков: https://t.me/' + bot.username + '\n' +
+    'Каждый, кто откроет её и нажмёт «Запустить», начнёт получать новые идеи.\n' +
+    'Список подписчиков виден на листе «' + CONFIG.SUBS_SHEET_NAME + '».\n' +
+    'Сейчас активных подписчиков: ' + subsActive_().length + '.');
 }
 
 function otklyuchitTelegram() {
-  PropertiesService.getScriptProperties().deleteProperty('TELEGRAM_CHAT_ID');
-  console.log('Отправка в телеграм выключена. Письма продолжают приходить.');
+  snyatRaspisanie_();
+  console.log('Расписание снято, бот больше не отвечает на команды и не рассылает идеи. ' +
+    'Письма продолжают приходить. Список подписчиков остался на листе «' +
+    CONFIG.SUBS_SHEET_NAME + '».');
+}
+
+function postavitRaspisanie_() {
+  snyatRaspisanie_();
+  ScriptApp.newTrigger('obrabotatKomandy')
+    .timeBased()
+    .everyMinutes(CONFIG.TELEGRAM_POLL_MINUTES)
+    .create();
+}
+
+function snyatRaspisanie_() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'obrabotatKomandy') ScriptApp.deleteTrigger(t);
+  });
 }
 
 /* =====================  ВСПОМОГАТЕЛЬНОЕ  ===================== */
