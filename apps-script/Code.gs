@@ -24,6 +24,12 @@ var CONFIG = {
   // Минимальное время заполнения формы в секундах.
   // Всё, что отправлено быстрее, считается ботом. 0 выключает проверку.
   MIN_SECONDS: 4
+
+  // Телеграм настраивается не здесь, а в свойствах скрипта
+  // (Настройки проекта -> Свойства скрипта): TELEGRAM_TOKEN и TELEGRAM_CHAT_ID.
+  // Токен бота не место в коде, который лежит в публичном репозитории.
+  // Как настроить: впишите токен в TELEGRAM_TOKEN, напишите боту любое
+  // сообщение и запустите функцию podklyuchitTelegram (см. в конце файла).
 };
 
 /* ============  СООТВЕТСТВИЕ ПОЛЕЙ И КОЛОНОК  ============ */
@@ -76,11 +82,14 @@ function doPost(e) {
 
     var saved = saveRow_(data);
 
-    // повтор той же отправки (запасной путь сработал поверх основного):
-    // строка уже есть, второй раз писать и слать письма не нужно
+    // Повтор той же отправки (запасной путь сработал поверх основного):
+    // строка уже есть, второй раз писать и слать уведомления не нужно.
+    // Сами уведомления обёрнуты в safely_: заявка уже в таблице, и сбой
+    // письма или телеграма не должен возвращать человеку ошибку.
     if (!saved.duplicate) {
-      notifyTeam_(data, saved.number);
-      if (CONFIG.SEND_CONFIRMATION) notifyAuthor_(data, saved.number);
+      safely_(function () { notifyTelegram_(data, saved.number); });
+      safely_(function () { notifyTeam_(data, saved.number); });
+      if (CONFIG.SEND_CONFIRMATION) safely_(function () { notifyAuthor_(data, saved.number); });
     }
 
     return json_({ ok: true, number: saved.number, duplicate: saved.duplicate });
@@ -202,7 +211,143 @@ function notifyAuthor_(data, number) {
     { name: CONFIG.PROJECT_NAME, htmlBody: html });
 }
 
+/* =====================  ТЕЛЕГРАМ  ===================== */
+
+function tgProp_(name) {
+  try {
+    return String(PropertiesService.getScriptProperties().getProperty(name) || '').trim();
+  } catch (err) {
+    return '';
+  }
+}
+
+// Настоящий токен выглядит как 1234567890:AAE... Пока в свойстве лежит
+// заглушка, считаем что телеграм не настроен и никуда не ходим.
+function tgToken_() {
+  var t = tgProp_('TELEGRAM_TOKEN');
+  return /^\d{5,}:[A-Za-z0-9_-]{20,}$/.test(t) ? t : '';
+}
+
+function tgCall_(method, payload) {
+  var token = tgToken_();
+  if (!token) return null;
+
+  var res = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/' + method, {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(payload || {}),
+    muteHttpExceptions: true
+  });
+  return JSON.parse(res.getContentText());
+}
+
+function notifyTelegram_(data, number) {
+  if (!tgToken_() || !tgProp_('TELEGRAM_CHAT_ID')) return; // не настроен, молча пропускаем
+
+  var line = function (label, key, limit) {
+    var v = clean_(data[key]);
+    if (!v) return '';
+    if (limit && v.length > limit) v = v.slice(0, limit) + '...';
+    return '\n<b>' + esc_(label) + ':</b> ' + esc_(v);
+  };
+
+  var text =
+    '<b>Новая идея №' + number + '</b>\n' +
+    esc_(clean_(data.title)) + '\n' +
+    line('Автор', 'fullName') +
+    line('Почта', 'email') +
+    line('Тема', 'topic') +
+    line('Срок', 'deadline') +
+    line('Участие', 'participation') +
+    line('Руководитель', 'lead') +
+    '\n' +
+    line('Суть', 'idea', 600) +
+    line('Проблема', 'problem', 600) +
+    line('Что даст', 'benefit', 600) +
+    line('Эффект в цифрах', 'metrics', 300) +
+    line('Ресурсы', 'resources', 400) +
+    line('Материалы', 'materials', 300) +
+    '\n\n<a href="' + SpreadsheetApp.getActive().getUrl() + '">Открыть таблицу заявок</a>';
+
+  if (text.length > 4000) text = text.slice(0, 3900) + '\n\n[сообщение обрезано, подробности в таблице]';
+
+  tgCall_('sendMessage', {
+    chat_id: tgProp_('TELEGRAM_CHAT_ID'),
+    text: text,
+    parse_mode: 'HTML',
+    disable_web_page_preview: true
+  });
+}
+
+/* ===== Настройка телеграма, запускается вручную один раз =====
+
+   1. В телеграме напишите @BotFather команду /newbot и придумайте боту имя.
+      BotFather пришлёт строку вида 1234567890:AAE... это и есть токен.
+   2. Настройки проекта -> Свойства скрипта -> впишите токен в TELEGRAM_TOKEN.
+   3. Напишите своему боту любое сообщение (или добавьте его в группу
+      и напишите там, тогда заявки будут падать в группу).
+   4. Выберите в списке функций podklyuchitTelegram и нажмите «Выполнить».
+      Скрипт сам найдёт чат, запомнит его и пришлёт туда проверочное сообщение.
+============================================================== */
+
+function podklyuchitTelegram() {
+  if (!tgToken_()) {
+    console.log('В свойстве TELEGRAM_TOKEN нет настоящего токена. ' +
+      'Настройки проекта -> Свойства скрипта -> впишите строку от @BotFather ' +
+      'вида 1234567890:AAE... вместо заглушки.');
+    return;
+  }
+
+  var upd = tgCall_('getUpdates', {});
+  if (!upd || !upd.ok) {
+    console.log('Телеграм ответил ошибкой. Проверьте токен. Ответ: ' + JSON.stringify(upd));
+    return;
+  }
+
+  var list = upd.result || [];
+  if (!list.length) {
+    console.log('Телеграм не видит ни одного сообщения боту. Напишите боту любое ' +
+      'сообщение (в группе тоже подойдёт) и запустите функцию ещё раз.');
+    return;
+  }
+
+  var last = list[list.length - 1];
+  var src = last.message || last.channel_post || last.edited_message || last.my_chat_member || {};
+  var chat = src.chat;
+  if (!chat || !chat.id) {
+    console.log('Не удалось определить чат. Напишите боту обычное текстовое сообщение и повторите.');
+    return;
+  }
+
+  PropertiesService.getScriptProperties().setProperty('TELEGRAM_CHAT_ID', String(chat.id));
+
+  var name = chat.title || chat.username || ((chat.first_name || '') + ' ' + (chat.last_name || '')).trim();
+  var sent = tgCall_('sendMessage', {
+    chat_id: String(chat.id),
+    text: 'Копилка идей подключена. Новые заявки будут приходить сюда.'
+  });
+
+  if (sent && sent.ok) {
+    console.log('Готово. Заявки будут приходить в чат «' + name + '» (id ' + chat.id + ').');
+  } else {
+    console.log('Чат запомнен (id ' + chat.id + '), но проверочное сообщение не ушло: ' + JSON.stringify(sent));
+  }
+}
+
+function otklyuchitTelegram() {
+  PropertiesService.getScriptProperties().deleteProperty('TELEGRAM_CHAT_ID');
+  console.log('Отправка в телеграм выключена. Письма продолжают приходить.');
+}
+
 /* =====================  ВСПОМОГАТЕЛЬНОЕ  ===================== */
+
+function safely_(fn) {
+  try {
+    fn();
+  } catch (err) {
+    logError_(err);
+  }
+}
 
 function parsePayload_(e) {
   if (e && e.postData && e.postData.contents) {
