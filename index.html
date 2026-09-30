@@ -8,6 +8,14 @@
   <meta property="og:title" content="Копилка идей">
   <meta property="og:description" content="Предложите свою идею: как улучшить процессы, сократить затраты или запустить новый продукт.">
   <meta property="og:type" content="website">
+  <script>
+    (function () {
+      var params = new URLSearchParams(location.search);
+      var design = params.get('design');
+      document.documentElement.dataset.design = ['classic', 'brand', 'studio'].indexOf(design) !== -1 ? design : 'classic';
+      document.documentElement.dataset.preview = params.get('preview') === '1' ? 'true' : 'false';
+    })();
+  </script>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cg fill='none' stroke='%231769e8' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18.5 32h11M20 36h8M22 40h4'/%3E%3Cpath d='M17.6 27.7c-2.4-1.8-4-4.7-4-7.9C13.6 14 18.3 9.3 24 9.3S34.4 14 34.4 19.8c0 3.2-1.5 6-4 7.9-1.1.9-1.8 1.9-2.1 3.1h-8.6c-.3-1.2-1-2.2-2.1-3.1Z'/%3E%3Cpath d='M24 2.8v3.1M7.2 19.6H4M44 19.6h-3.2M12 7.5l2.2 2.2M36 7.5l-2.2 2.2'/%3E%3C/g%3E%3C/svg%3E">
   <style>
     :root {
@@ -294,6 +302,62 @@
       font-size: 13px;
       line-height: 1.35;
     }
+
+    .upload-box {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      margin-bottom: 12px;
+      padding: 18px 16px;
+      border: 1.5px dashed var(--border-strong);
+      border-radius: 8px;
+      background: var(--card);
+      transition: border-color .18s, background .18s;
+    }
+
+    .upload-box.is-dragging,
+    .upload-box:focus-within {
+      border-color: var(--primary);
+      background: var(--bg);
+    }
+
+    .upload-box.is-busy { opacity: .65; }
+    .upload-box.has-upload-error { border-color: var(--danger); }
+    .upload-box .upload-body { flex: 1; min-width: 0; }
+    .upload-box .upload-title { margin: 0 0 10px; font-size: 15px; font-weight: 600; }
+    .upload-box .upload-action {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      min-height: 40px;
+      margin: 0 0 9px;
+      padding: 0 14px;
+      border: 1px solid var(--border-strong);
+      border-radius: 6px;
+      color: var(--primary);
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .upload-box .upload-action:focus-within { outline: 3px solid var(--primary); outline-offset: 3px; }
+    .upload-box .upload-input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+    .upload-box .upload-help { display: block; color: var(--muted); font-size: 13px; line-height: 1.45; }
+    .upload-box .upload-feedback { margin: 8px 0 0; font-size: 13px; line-height: 1.45; }
+    .upload-box.has-upload-error .upload-feedback { color: var(--danger); }
+    .file-list { margin: 0 0 12px; padding: 0; list-style: none; }
+    .file-list li { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .file-list .file-details { min-width: 0; flex: 1; }
+    .file-list .file-name { display: block; overflow-wrap: anywhere; font-size: 14px; font-weight: 600; }
+    .file-list .file-size { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; }
+    .file-list .file-remove { min-width: 40px; min-height: 40px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font: inherit; font-size: 21px; cursor: pointer; }
+    .file-list .file-remove:hover { color: var(--danger); background: var(--bg); }
+    .file-list .file-remove:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
 
     .error-msg {
       display: none;
@@ -607,9 +671,25 @@
       }
     }
   </style>
+  <link rel="stylesheet" href="assets/designs.css">
 </head>
 <body>
+  <div class="brand-bar">
+    <img class="brand-logo" src="assets/greenway-logo.png" alt="Greenway Global" width="1021" height="272">
+    <span class="brand-bar-note">Форма предложений сотрудников</span>
+  </div>
   <main class="page">
+    <aside class="brand-panel" aria-label="О форме">
+      <img class="brand-logo" src="assets/greenway-logo.png" alt="Greenway Global" width="1021" height="272">
+      <p class="panel-label">Форма предложений сотрудников</p>
+      <h2 class="panel-title">Копилка<br>идей</h2>
+      <p class="panel-copy">Предложите улучшение процессов, новый продукт или идею для команды.</p>
+      <ol class="panel-steps">
+        <li><span>01</span>Опишите идею</li>
+        <li><span>02</span>Приложите материалы</li>
+        <li><span>03</span>Отправьте предложение</li>
+      </ol>
+    </aside>
     <form class="form-card" id="ideaForm" novalidate>
       <div class="form-body">
         <header class="header">
@@ -809,6 +889,22 @@
 
         <div class="field" data-field style="margin-bottom:0">
           <label for="materials">13. Дополнительные материалы <span class="optional">(необязательно)</span></label>
+          <div class="upload-box" id="uploadBox" role="group" aria-labelledby="uploadTitle" aria-describedby="uploadHelp uploadFeedback">
+            <span class="link-box-icon" aria-hidden="true">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+                <path d="M12 16V3m-4 4 4-4 4 4M4 15v5h16v-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+            <div class="upload-body">
+              <p class="upload-title" id="uploadTitle">Перетащите файлы сюда или выберите на устройстве</p>
+              <label class="upload-action" for="attachments">Выбрать файлы
+                <input class="upload-input" id="attachments" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.jpg,.jpeg,.png,.webp,.gif,.zip" aria-label="Прикрепить дополнительные материалы" aria-describedby="uploadHelp uploadFeedback">
+              </label>
+              <small class="upload-help" id="uploadHelp">До 5 файлов, суммарно до 10 МБ. PDF, документы, таблицы, презентации, изображения, TXT, CSV и ZIP.</small>
+              <p class="upload-feedback" id="uploadFeedback" role="status" aria-live="polite" hidden></p>
+            </div>
+          </div>
+          <ul class="file-list" id="fileList" aria-label="Прикреплённые файлы"></ul>
           <div class="link-box">
             <span class="link-box-icon" aria-hidden="true">
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
@@ -817,7 +913,7 @@
             </span>
             <div class="link-box-body">
               <input id="materials" name="materials" type="text" maxlength="500" placeholder="Вставьте ссылку на презентацию, расчёты или изображения">
-              <small>Загрузите файлы на Яндекс.Диск, Облако Mail или в облако компании и вставьте сюда ссылку с открытым доступом.</small>
+              <small>Можно также вставить ссылку с открытым доступом на Яндекс.Диск, Облако Mail или облако компании.</small>
             </div>
           </div>
         </div>
@@ -845,14 +941,127 @@
     </form>
   </main>
 
+  <script id="attachment-tools">
+    var IdeaAttachments = (function () {
+      var MAX_FILES = 5;
+      var MAX_BYTES = 10 * 1024 * 1024;
+      var MIME_TYPES = {
+        pdf: 'application/pdf', doc: 'application/msword',
+        docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        xls: 'application/vnd.ms-excel',
+        xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ppt: 'application/vnd.ms-powerpoint',
+        pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        txt: 'text/plain', csv: 'text/csv', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+        png: 'image/png', webp: 'image/webp', gif: 'image/gif', zip: 'application/zip'
+      };
+
+      function extension(file) { return String(file.name || '').split('.').pop().toLowerCase(); }
+      function key(file) { return [file.name, file.size, file.lastModified].join('\u0000'); }
+
+      function validateFiles(files) {
+        if (files.length > MAX_FILES) return 'Можно прикрепить не более 5 файлов. Выберите меньше файлов.';
+        var total = 0;
+        for (var i = 0; i < files.length; i++) {
+          var file = files[i];
+          if (!Object.prototype.hasOwnProperty.call(MIME_TYPES, extension(file)) || String(file.name).indexOf('.') === -1) {
+            return 'Формат файла «' + file.name + '» не поддерживается. Допустимые форматы указаны под кнопкой.';
+          }
+          if (!Number.isSafeInteger(file.size) || file.size <= 0) return 'Файл «' + file.name + '» пуст или недоступен. Выберите другой файл.';
+          total += file.size;
+        }
+        return total > MAX_BYTES ? 'Общий размер файлов превышает 10 МБ. Удалите часть файлов или выберите меньшие.' : '';
+      }
+
+      function addFiles(existing, incoming) {
+        var next = existing.slice();
+        var duplicates = 0;
+        Array.prototype.forEach.call(incoming, function (file) {
+          if (next.some(function (selected) { return key(selected) === key(file); })) duplicates++;
+          else next.push(file);
+        });
+        var error = validateFiles(next);
+        return { files: error ? existing.slice() : next, error: error, duplicates: duplicates };
+      }
+
+      function readFiles(files) {
+        var error = validateFiles(files);
+        if (error) return Promise.reject(new Error(error));
+        return Promise.all(files.map(function (file) {
+          return new Promise(function (resolve, reject) {
+            var reader = new FileReader();
+            function failed() { reject(new Error('Не удалось прочитать файл «' + file.name + '». Удалите его и прикрепите снова.')); }
+            reader.onerror = failed;
+            reader.onabort = failed;
+            reader.onload = function () {
+              var result = String(reader.result || '');
+              var marker = result.indexOf(';base64,');
+              if (marker === -1 || !result.slice(marker + 8)) { failed(); return; }
+              resolve({ name: file.name, mimeType: MIME_TYPES[extension(file)], size: file.size, base64: result.slice(marker + 8) });
+            };
+            reader.readAsDataURL(file);
+          });
+        }));
+      }
+
+      function isConfirmed(response) {
+        return !!(response && response.ok === true && typeof response.number === 'number' && Number.isSafeInteger(response.number) && response.number > 0);
+      }
+
+      function send(payload, endpoint, preview) {
+        if (preview) return Promise.resolve({ demo: true });
+        if (!endpoint) return Promise.reject(new Error('Отправка ещё не настроена. Пожалуйста, сообщите организатору.'));
+        var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        return new Promise(function (resolve, reject) {
+          var timer = setTimeout(function () {
+            if (controller) controller.abort();
+            reject(new Error('Сервер не подтвердил отправку вовремя. Данные и файлы остались в форме. Попробуйте отправить ещё раз.'));
+          }, 60000);
+          var options = { method: 'POST', body: JSON.stringify(payload) };
+          if (controller) options.signal = controller.signal;
+          Promise.resolve().then(function () { return fetch(endpoint, options); })
+            .then(function (response) {
+              if (!response.ok) throw new Error('Сервис временно недоступен. Данные и файлы остались в форме. Попробуйте ещё раз.');
+              return response.json();
+            }).then(function (response) {
+              if (!isConfirmed(response)) throw new Error(response && response.error || 'Сервер не подтвердил отправку заявки. Данные и файлы остались в форме. Попробуйте ещё раз.');
+              if (payload.attachments && payload.attachments.length > 0 && response.attachmentCount !== payload.attachments.length) {
+                throw new Error('Сервис не подтвердил приём файлов. Данные и файлы остались в форме. Попробуйте позже или сообщите организатору.');
+              }
+              clearTimeout(timer);
+              resolve(response);
+            }).catch(function (error) {
+              clearTimeout(timer);
+              reject(error);
+            });
+        });
+      }
+
+      function submissionState() {
+        var payload = null;
+        return {
+          get: function (create) { if (!payload) payload = create(); return payload; },
+          invalidate: function () { payload = null; }
+        };
+      }
+
+      function sizeLabel(bytes) {
+        if (bytes < 1024) return bytes + ' Б';
+        var mb = bytes >= 1024 * 1024;
+        return (bytes / (mb ? 1024 * 1024 : 1024)).toLocaleString('ru-RU', { maximumFractionDigits: 1 }) + (mb ? ' МБ' : ' КБ');
+      }
+
+      return { addFiles: addFiles, readFiles: readFiles, validateFiles: validateFiles,
+        isConfirmed: isConfirmed, send: send, submissionState: submissionState, sizeLabel: sizeLabel };
+    })();
+  </script>
   <script>
     /* ------------------------------------------------------------------
        НАСТРОЙКА
        Вставьте сюда адрес веб-приложения Google Apps Script,
        он выглядит так: https://script.google.com/macros/s/AKfy.../exec
-       Пока строка пустая, форма работает в режиме превью:
-       проверяет заполнение и показывает экран «спасибо», но никуда
-       не отправляет данные.
+       Для проверки формы без отправки откройте страницу с ?preview=1.
+       В демонстрации проверяется заполнение и читаются выбранные файлы.
     ------------------------------------------------------------------ */
     var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwPunjffBPOc_JUXoKLJR8uz7Lgiu_M4uizCbhPE41qMxVoDcIiJuNdb0ohUCG771gEZA/exec';
 
@@ -866,6 +1075,15 @@
       var consentRow = document.getElementById('consentRow');
       var consent = document.getElementById('consent');
       var openedAt = Date.now();
+      var preview = new URLSearchParams(location.search).get('preview') === '1';
+      var uploadBox = document.getElementById('uploadBox');
+      var fileInput = document.getElementById('attachments');
+      var fileList = document.getElementById('fileList');
+      var uploadFeedback = document.getElementById('uploadFeedback');
+      var files = [];
+      var sending = false;
+      var disabledControls = [];
+      var submission = IdeaAttachments.submissionState();
 
       var FIELDS = ['fullName', 'email', 'title', 'idea', 'problem', 'topic', 'benefit',
         'metrics', 'resources', 'deadline', 'lead', 'participation', 'materials'];
@@ -880,6 +1098,7 @@
         });
         consentRow.classList.remove('has-error');
         alertBox.classList.remove('visible');
+        alertBox.textContent = '';
       }
 
       function markError(node) {
@@ -931,8 +1150,6 @@
         data.website = form.elements['website'].value;
         data.elapsed = Math.round((Date.now() - openedAt) / 1000);
         data.page = location.href;
-        // одноразовый номер отправки: основной и запасной путь используют один
-        // и тот же, поэтому сервер отличит повтор от новой заявки
         data.submissionId = newId();
         return data;
       }
@@ -945,8 +1162,21 @@
       }
 
       function setLoading(on) {
-        btn.disabled = on;
-        btnText.textContent = on ? 'Отправляем...' : 'Отправить идею';
+        sending = on;
+        form.setAttribute('aria-busy', String(on));
+        uploadBox.classList.toggle('is-busy', on);
+        uploadBox.classList.remove('is-dragging');
+        if (on) {
+          disabledControls = Array.prototype.map.call(form.querySelectorAll('input, textarea, select, button'), function (control) {
+            var state = { control: control, disabled: control.disabled };
+            control.disabled = true;
+            return state;
+          });
+        } else {
+          disabledControls.forEach(function (state) { state.control.disabled = state.disabled; });
+          disabledControls = [];
+        }
+        btnText.textContent = on ? (preview ? 'Проверяем...' : 'Отправляем...') : 'Отправить идею';
         btnIcon.style.display = on ? 'none' : '';
         var sp = document.getElementById('btnSpinner');
         if (on && !sp) {
@@ -959,46 +1189,69 @@
         }
       }
 
-      function sendViaIframe(payload) {
-        return new Promise(function (resolve) {
-          var name = 'sink_' + Date.now();
-          var frame = document.createElement('iframe');
-          frame.name = name;
-          frame.style.display = 'none';
-          document.body.appendChild(frame);
+      function showUploadFeedback(text, error) {
+        uploadBox.classList.toggle('has-upload-error', !!error);
+        fileInput.setAttribute('aria-invalid', String(!!error));
+        uploadFeedback.setAttribute('role', error ? 'alert' : 'status');
+        uploadFeedback.textContent = text || '';
+        uploadFeedback.hidden = !text;
+      }
 
-          var f = document.createElement('form');
-          f.method = 'POST';
-          f.action = SCRIPT_URL;
-          f.target = name;
-          f.style.display = 'none';
-          Object.keys(payload).forEach(function (k) {
-            var i = document.createElement('input');
-            i.type = 'hidden';
-            i.name = k;
-            i.value = payload[k];
-            f.appendChild(i);
+      function renderFiles() {
+        fileList.textContent = '';
+        files.forEach(function (file, index) {
+          var item = document.createElement('li');
+          var details = document.createElement('span');
+          details.className = 'file-details';
+          var name = document.createElement('span');
+          name.className = 'file-name';
+          name.textContent = file.name;
+          var size = document.createElement('span');
+          size.className = 'file-size';
+          size.textContent = IdeaAttachments.sizeLabel(file.size);
+          details.appendChild(name);
+          details.appendChild(size);
+          var remove = document.createElement('button');
+          remove.type = 'button';
+          remove.className = 'file-remove';
+          remove.textContent = '×';
+          remove.setAttribute('aria-label', 'Удалить файл «' + file.name + '»');
+          remove.addEventListener('click', function () {
+            if (sending) return;
+            files.splice(index, 1);
+            submission.invalidate();
+            alertBox.classList.remove('visible');
+            renderFiles();
+            showUploadFeedback(files.length ? 'Прикреплено файлов: ' + files.length + '.' : 'Все файлы удалены.', false);
+            var next = fileList.querySelectorAll('.file-remove')[index] || fileList.querySelector('.file-remove');
+            (next || fileInput).focus();
           });
-          document.body.appendChild(f);
-          f.submit();
-
-          setTimeout(function () {
-            f.remove();
-            frame.remove();
-            resolve();
-          }, 2500);
+          item.appendChild(details);
+          item.appendChild(remove);
+          fileList.appendChild(item);
         });
       }
 
-      function send(payload) {
-        return fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify(payload) })
-          .then(function (r) { return r.json(); })
-          .catch(function () {
-            return sendViaIframe(payload).then(function () { return { ok: true, blind: true }; });
-          });
+      function addFiles(incoming) {
+        if (sending || !incoming || !incoming.length) return;
+        var selected = IdeaAttachments.addFiles(files, incoming);
+        if (selected.error) {
+          showUploadFeedback(selected.error, true);
+          return;
+        }
+        if (selected.files.length !== files.length) {
+          files = selected.files;
+          submission.invalidate();
+          alertBox.classList.remove('visible');
+          renderFiles();
+        }
+        var total = files.reduce(function (sum, file) { return sum + file.size; }, 0);
+        showUploadFeedback('Прикреплено файлов: ' + files.length + ', ' + IdeaAttachments.sizeLabel(total) + '.' +
+          (selected.duplicates ? ' Повторно выбранные файлы уже в списке.' : ''), false);
       }
 
-      function showSuccess(payload, demo) {
+      function showSuccess(payload, response) {
+        var demo = response.demo === true;
         var safeMail = (payload.email || '').replace(/[<>&"]/g, '');
         card.innerHTML =
           '<div class="done">' +
@@ -1007,11 +1260,11 @@
           '      <path d="M4.5 12.6 9.6 17.7 19.5 7.2" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>' +
           '    </svg>' +
           '  </div>' +
-          '  <h2>Спасибо, идея отправлена</h2>' +
-          '  <p>Мы получили вашу заявку и рассмотрим её в ближайшее время.</p>' +
-          (safeMail ? '  <p>Ответ придёт на адрес <b>' + safeMail + '</b>.</p>' : '') +
-          (demo ? '  <div class="demo-note">Это превью формы. Данные никуда не отправлены.</div>' : '') +
-          '  <button class="again-btn" type="button" id="againBtn">Отправить ещё одну идею</button>' +
+          (demo ? '  <h2>Демонстрация. Заявка не отправлена</h2><p>Форма заполнена корректно. Данные никуда не отправлены.</p>' :
+            '  <h2>Спасибо, идея отправлена</h2><p>Заявка № ' + response.number + ' получена. Мы рассмотрим её в ближайшее время.</p>') +
+          (!demo && safeMail ? '  <p>Ответ придёт на адрес <b>' + safeMail + '</b>.</p>' : '') +
+          (files.length ? '  <p>Прикреплено файлов: ' + files.length + '.</p>' : '') +
+          '  <button class="again-btn" type="button" id="againBtn">' + (demo ? 'Вернуться к форме' : 'Отправить ещё одну идею') + '</button>' +
           '</div>';
         document.getElementById('againBtn').addEventListener('click', function () {
           location.reload();
@@ -1026,19 +1279,46 @@
       }
 
       form.addEventListener('input', function (e) {
+        if (sending || e.target === fileInput) return;
+        submission.invalidate();
         var f = fieldOf(e.target);
         if (f) f.classList.remove('has-error');
         if (e.target === consent) consentRow.classList.remove('has-error');
+        alertBox.classList.remove('visible');
       });
 
       form.addEventListener('change', function (e) {
+        if (sending || e.target === fileInput) return;
+        submission.invalidate();
         var f = fieldOf(e.target);
         if (f) f.classList.remove('has-error');
         if (e.target === consent) consentRow.classList.remove('has-error');
+        alertBox.classList.remove('visible');
+      });
+
+      fileInput.addEventListener('change', function () {
+        addFiles(fileInput.files);
+        fileInput.value = '';
+      });
+
+      ['dragenter', 'dragover'].forEach(function (name) {
+        uploadBox.addEventListener(name, function (e) {
+          e.preventDefault();
+          if (!sending) uploadBox.classList.add('is-dragging');
+        });
+      });
+      uploadBox.addEventListener('dragleave', function (e) {
+        if (!uploadBox.contains(e.relatedTarget)) uploadBox.classList.remove('is-dragging');
+      });
+      uploadBox.addEventListener('drop', function (e) {
+        e.preventDefault();
+        uploadBox.classList.remove('is-dragging');
+        addFiles(e.dataTransfer && e.dataTransfer.files);
       });
 
       form.addEventListener('submit', function (e) {
         e.preventDefault();
+        if (sending) return;
         clearErrors();
 
         var bad = validate();
@@ -1050,27 +1330,22 @@
           return;
         }
 
-        var payload = collect();
         setLoading(true);
-
-        if (!SCRIPT_URL) {
-          setTimeout(function () {
-            setLoading(false);
-            showSuccess(payload, true);
-          }, 600);
-          return;
-        }
-
-        send(payload).then(function (res) {
+        var payload;
+        IdeaAttachments.readFiles(files).then(function (attachments) {
+          payload = submission.get(function () {
+            var collected = collect();
+            collected.attachments = attachments;
+            return collected;
+          });
+          return IdeaAttachments.send(payload, SCRIPT_URL, preview);
+        }).then(function (response) {
           setLoading(false);
-          if (res && res.ok === false) {
-            showAlert(res.error || 'Не удалось отправить заявку. Попробуйте ещё раз.');
-            return;
-          }
-          showSuccess(payload, false);
-        }).catch(function () {
+          showSuccess(payload, response);
+        }).catch(function (error) {
           setLoading(false);
-          showAlert('Не удалось отправить заявку. Проверьте интернет и попробуйте ещё раз.');
+          var message = error && error.name !== 'TypeError' && error.name !== 'SyntaxError' && error.name !== 'AbortError' ? error.message : '';
+          showAlert(message || 'Не удалось получить подтверждение отправки. Данные и файлы остались в форме. Проверьте интернет и попробуйте ещё раз.');
         });
       });
     })();

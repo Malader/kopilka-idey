@@ -33,7 +33,10 @@ var CONFIG = {
   TELEGRAM_POLL_MINUTES: 1,
 
   // Сколько последних заявок показывает команда /last.
-  TELEGRAM_LAST_COUNT: 5
+  TELEGRAM_LAST_COUNT: 5,
+
+  MAX_ATTACHMENTS: 5,
+  MAX_ATTACHMENT_BYTES: 10 * 1024 * 1024
 };
 
 /* Токен бота и служебные значения лежат в свойствах скрипта
@@ -45,6 +48,7 @@ var CONFIG = {
                       Если заполнено, подписаться можно только
                       командой «/start слово».
      TELEGRAM_OFFSET  служебное, скрипт ведёт сам, руками не трогать.
+     ATTACHMENTS_FOLDER_ID  ID закрытой папки Google Drive для файлов.
 */
 
 /* ============  СООТВЕТСТВИЕ ПОЛЕЙ И КОЛОНОК  ============ */
@@ -103,14 +107,16 @@ function doPost(e) {
     // или телеграма не должен возвращать человеку ошибку.
     if (!saved.duplicate) {
       safely_(function () { notifyTelegram_(data, saved.number); });
-      safely_(function () { notifyTeam_(data, saved.number); });
+      safely_(function () { notifyTeam_(data, saved.number, saved.attachments); });
       if (CONFIG.SEND_CONFIRMATION) safely_(function () { notifyAuthor_(data, saved.number); });
     }
 
-    return json_({ ok: true, number: saved.number, duplicate: saved.duplicate });
+    return json_({ ok: true, number: saved.number, duplicate: saved.duplicate,
+      attachmentCount: saved.attachmentCount });
   } catch (err) {
     logError_(err, e);
-    return json_({ ok: false, error: 'Внутренняя ошибка сервиса. Попробуйте ещё раз позже.' });
+    return json_({ ok: false, error: err && err.attachmentError ? err.message :
+      'Внутренняя ошибка сервиса. Попробуйте ещё раз позже.' });
   }
 }
 
@@ -149,32 +155,173 @@ function saveRow_(data) {
     // ту же отправку второй раз не записываем, возвращаем номер первой
     if (key) {
       var seen = cache.get(key);
-      if (seen) return { number: Number(seen), duplicate: true };
+      if (seen) {
+        var receipt = JSON.parse(seen);
+        if (typeof receipt === 'number') receipt = { number: receipt, attachmentCount: 0 };
+        return { number: receipt.number, duplicate: true, attachmentCount: receipt.attachmentCount };
+      }
     }
 
-    var sh = sheet_();
-    var number = sh.getLastRow(); // строка заголовка занимает первую, поэтому это и есть номер заявки
+    var attachments = attachmentBlobs_(data.attachments);
+    var files = [];
+    var sh;
+    var number;
+    var row;
+    try {
+      if (attachments.length) {
+        var folder = attachmentsFolder_();
+        attachments.forEach(function (blob) { files.push(folder.createFile(blob)); });
+      }
 
-    var row = [number, new Date()];
-    FIELDS.forEach(function (f) { row.push(clean_(data[f[0]])); });
-    row.push('Новая', '');
+      sh = sheet_();
+      number = sh.getLastRow(); // строка заголовка занимает первую, поэтому это и есть номер заявки
+      row = [number, new Date()];
+      FIELDS.forEach(function (f) { row.push(clean_(data[f[0]])); });
+      row.push('Новая', '');
 
-    sh.appendRow(row);
-    var last = sh.getLastRow();
-    sh.getRange(last, 1, 1, row.length).setVerticalAlignment('top').setWrap(true);
-    sh.getRange(last, 2).setNumberFormat('dd.MM.yyyy HH:mm');
+      if (files.length) {
+        var column = attachmentColumn_(sh);
+        while (row.length < column) row.push('');
+        row[column - 1] = files.map(function (file, i) {
+          return attachments[i].getName() + ': ' + file.getUrl();
+        }).join('\n');
+      }
 
-    if (key) cache.put(key, String(number), 1800);
-
-    return { number: number, duplicate: false };
+      sh.appendRow(row);
+      var last = sh.getLastRow();
+      sh.getRange(last, 1, 1, row.length).setVerticalAlignment('top').setWrap(true);
+      sh.getRange(last, 2).setNumberFormat('dd.MM.yyyy HH:mm');
+      if (key) cache.put(key, JSON.stringify({ number: number, attachmentCount: attachments.length }), 1800);
+    } catch (err) {
+      if (!attachments.length) throw err;
+      try {
+        if (sh && row && sh.getLastRow() === number + 1) {
+          var savedRow = sh.getRange(number + 1, 1, 1, 2).getValues()[0];
+          if (savedRow[0] === number && savedRow[1] instanceof Date &&
+              savedRow[1].getTime() === row[1].getTime()) {
+            sh.deleteRow(number + 1);
+          }
+        }
+      } catch (cleanupError) { logError_(cleanupError); }
+      files.forEach(function (file) {
+        try { file.setTrashed(true); } catch (cleanupError) { logError_(cleanupError); }
+      });
+      if (err && err.attachmentError) throw err;
+      throw attachmentError_('Не удалось сохранить заявку с файлами. Попробуйте ещё раз позже.');
+    }
+    return { number: number, duplicate: false, attachments: attachments,
+      attachmentCount: attachments.length };
   } finally {
     lock.releaseLock();
   }
 }
 
+function attachmentError_(message) {
+  var err = new Error(message);
+  err.attachmentError = true;
+  return err;
+}
+
+function attachmentBlobs_(items) {
+  if (items === undefined) return [];
+  if (!Array.isArray(items)) throw attachmentError_('Некорректный список прикреплённых файлов.');
+  if (items.length > CONFIG.MAX_ATTACHMENTS) {
+    throw attachmentError_('Можно прикрепить не более ' + CONFIG.MAX_ATTACHMENTS + ' файлов.');
+  }
+
+  var mimeTypes = {
+    pdf: 'application/pdf',
+    doc: 'application/msword',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    xls: 'application/vnd.ms-excel',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ppt: 'application/vnd.ms-powerpoint',
+    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    txt: 'text/plain', csv: 'text/csv', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+    png: 'image/png', webp: 'image/webp', gif: 'image/gif', zip: 'application/zip'
+  };
+  var total = 0;
+  return items.map(function (item) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw attachmentError_('Некорректные данные прикреплённого файла.');
+    }
+    if (typeof item.name !== 'string' || !item.name.trim()) {
+      throw attachmentError_('Не указано имя прикреплённого файла.');
+    }
+    var name = item.name.replace(/[\u0000-\u001f\u007f]/g, '')
+      .split(/[\\/]/).pop().replace(/[<>:"|?*]/g, '_').replace(/^[=+@-]+/, '').trim();
+    var dot = name.lastIndexOf('.');
+    var extension = name.slice(dot + 1).toLowerCase();
+    if (dot < 1 || !Object.prototype.hasOwnProperty.call(mimeTypes, extension)) {
+      throw attachmentError_('Недопустимый формат файла: ' + name.slice(0, 180) + '.');
+    }
+    name = name.slice(0, Math.min(dot, 180 - (name.length - dot))) + name.slice(dot);
+    if (typeof item.size !== 'number' || !isFinite(item.size) ||
+        item.size <= 0 || Math.floor(item.size) !== item.size) {
+      throw attachmentError_('Некорректный размер файла: ' + name + '. Пустые файлы не принимаются.');
+    }
+    if (typeof item.base64 !== 'string' || !item.base64.length || item.base64.length % 4 !== 0 ||
+        !/^[A-Za-z0-9+/]*={0,2}$/.test(item.base64)) {
+      throw attachmentError_('Некорректные данные base64 файла: ' + name + '.');
+    }
+    var padding = item.base64.slice(-2) === '==' ? 2 : (item.base64.slice(-1) === '=' ? 1 : 0);
+    var size = item.base64.length / 4 * 3 - padding;
+    if (size !== item.size) throw attachmentError_('Размер файла не совпадает с данными: ' + name + '.');
+    total += size;
+    if (total > CONFIG.MAX_ATTACHMENT_BYTES) {
+      throw attachmentError_('Общий размер файлов не должен превышать 10 МБ.');
+    }
+    var bytes;
+    try {
+      bytes = Utilities.base64Decode(item.base64);
+    } catch (err) {
+      throw attachmentError_('Некорректные данные base64 файла: ' + name + '.');
+    }
+    if (bytes.length !== item.size || Utilities.base64Encode(bytes) !== item.base64) {
+      throw attachmentError_('Некорректные данные base64 файла: ' + name + '.');
+    }
+    return Utilities.newBlob(bytes, mimeTypes[extension], name);
+  });
+}
+
+function attachmentsFolder_() {
+  var id;
+  try {
+    id = String(PropertiesService.getScriptProperties().getProperty('ATTACHMENTS_FOLDER_ID') || '').trim();
+  } catch (err) {
+    throw attachmentError_('Не удалось прочитать настройки ATTACHMENTS_FOLDER_ID. Попробуйте ещё раз позже.');
+  }
+  if (!id) {
+    throw attachmentError_('Приём файлов не настроен: укажите ATTACHMENTS_FOLDER_ID в свойствах скрипта.');
+  }
+  var folder;
+  try {
+    folder = DriveApp.getFolderById(id);
+    if (folder.isTrashed()) throw attachmentError_('Папка для файлов находится в корзине.');
+    if (folder.getSharingAccess() !== DriveApp.Access.PRIVATE) {
+      throw attachmentError_('Папка для файлов должна быть закрыта: отключите общий доступ по ссылке и для домена.');
+    }
+  } catch (err) {
+    if (err && err.attachmentError) throw err;
+    throw attachmentError_('Нет доступа к папке для файлов. Проверьте ATTACHMENTS_FOLDER_ID и разрешения Google Drive.');
+  }
+  return folder;
+}
+
+function attachmentColumn_(sh) {
+  var last = sh.getLastColumn();
+  var header = sh.getRange(1, 1, 1, last).getValues()[0];
+  var index = header.indexOf('Файлы');
+  if (index >= 0) return index + 1;
+  sh.getRange(1, last + 1).setValue('Файлы').setFontWeight('bold')
+    .setBackground('#edf5ff').setVerticalAlignment('middle');
+  sh.setColumnWidth(last + 1, 220);
+  return last + 1;
+}
+
 /* =====================  ПИСЬМА  ===================== */
 
-function notifyTeam_(data, number) {
+function notifyTeam_(data, number, attachments) {
   var to = String(CONFIG.NOTIFY_EMAILS || '').trim();
   if (!to) return;
 
@@ -202,6 +349,7 @@ function notifyTeam_(data, number) {
     htmlBody: html
   };
   if (isEmail_(data.email)) options.replyTo = String(data.email).trim();
+  if (attachments && attachments.length) options.attachments = attachments;
 
   MailApp.sendEmail(to, 'Новая идея №' + number + ': ' + clean_(data.title), stripTags_(html), options);
 }
