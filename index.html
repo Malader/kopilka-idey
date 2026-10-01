@@ -712,13 +712,13 @@
         <div class="grid-2">
           <div class="field" data-field>
             <label for="fullName">1. ФИО <span class="required">*</span></label>
-            <input id="fullName" name="fullName" type="text" placeholder="Укажите ваше полное имя" autocomplete="name" data-required>
+            <input id="fullName" name="fullName" type="text" maxlength="200" placeholder="Укажите ваше полное имя" autocomplete="name" data-required>
             <div class="error-msg">Укажите ФИО</div>
           </div>
 
           <div class="field" data-field>
             <label for="email">2. Почта <span class="required">*</span></label>
-            <input id="email" name="email" type="email" placeholder="example@company.ru" autocomplete="email" data-required data-email>
+            <input id="email" name="email" type="email" maxlength="254" placeholder="example@company.ru" autocomplete="email" data-required data-email>
             <div class="error-msg">Укажите корректный адрес почты</div>
           </div>
         </div>
@@ -901,9 +901,9 @@
             <div class="upload-body">
               <p class="upload-title" id="uploadTitle">Перетащите файлы сюда или выберите на устройстве</p>
               <label class="upload-action" for="attachments">Выбрать файлы
-                <input class="upload-input" id="attachments" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.jpg,.jpeg,.png,.webp,.gif,.zip" aria-label="Прикрепить дополнительные материалы" aria-describedby="uploadHelp uploadFeedback">
+                <input class="upload-input" id="attachments" type="file" multiple accept=".pdf,.docx,.xlsx,.pptx,.txt,.csv,.jpg,.jpeg,.png,.webp,.gif" aria-label="Прикрепить дополнительные материалы" aria-describedby="uploadHelp uploadFeedback">
               </label>
-              <small class="upload-help" id="uploadHelp">До 5 файлов, суммарно до 10 МБ. PDF, документы, таблицы, презентации, изображения, TXT, CSV и ZIP.</small>
+              <small class="upload-help" id="uploadHelp">До 5 файлов, суммарно до 10 МБ. PDF, документы, таблицы, презентации, изображения, TXT и CSV.</small>
               <p class="upload-feedback" id="uploadFeedback" role="status" aria-live="polite" hidden></p>
             </div>
           </div>
@@ -944,19 +944,18 @@
     </form>
   </main>
 
+  <script src="assets/security.js"></script>
   <script id="attachment-tools">
     var IdeaAttachments = (function () {
       var MAX_FILES = 5;
       var MAX_BYTES = 10 * 1024 * 1024;
       var MIME_TYPES = {
-        pdf: 'application/pdf', doc: 'application/msword',
+        pdf: 'application/pdf',
         docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        xls: 'application/vnd.ms-excel',
         xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        ppt: 'application/vnd.ms-powerpoint',
         pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
         txt: 'text/plain', csv: 'text/csv', jpg: 'image/jpeg', jpeg: 'image/jpeg',
-        png: 'image/png', webp: 'image/webp', gif: 'image/gif', zip: 'application/zip'
+        png: 'image/png', webp: 'image/webp', gif: 'image/gif'
       };
 
       function extension(file) { return String(file.name || '').split('.').pop().toLowerCase(); }
@@ -1021,7 +1020,7 @@
             }
           }
         } catch (e) {}
-        return String(Date.now()) + '-' + Math.random().toString(36).slice(2, 10);
+        throw new Error('Для безопасной отправки откройте HTTPS-версию сайта в современном браузере.');
       }
 
       function send(payload, endpoint, preview, onProgress) {
@@ -1116,7 +1115,10 @@
             }).then(function (response) {
               if (settled) return;
               if (response && (response.ok === false || response.error)) {
-                finish(false, new Error(response.error || 'Сервер не подтвердил отправку заявки. Данные и файлы остались в форме. Попробуйте ещё раз.'));
+                var error = new Error(response.error || 'Сервер не подтвердил отправку заявки. Данные и файлы остались в форме. Попробуйте ещё раз.');
+                error.code = response.code;
+                error.retryAfterSeconds = response.retryAfterSeconds;
+                finish(false, error);
                 return;
               }
               if (!isConfirmed(response)) {
@@ -1136,6 +1138,7 @@
         var payload = null;
         return {
           get: function (create) { if (!payload) payload = create(); return payload; },
+          peek: function () { return payload; },
           invalidate: function () { payload = null; }
         };
       }
@@ -1246,6 +1249,7 @@
         data.elapsed = Math.round((Date.now() - openedAt) / 1000);
         data.page = location.href;
         data.submissionId = newId();
+        data.clientId = IdeaSecurity.clientId();
         return data;
       }
 
@@ -1424,14 +1428,24 @@
 
         setLoading(true);
         var payload;
-        IdeaAttachments.readFiles(files).then(function (attachments) {
+        var previous = submission.peek();
+        var expectedFiles = files.length;
+        var accepted = previous && !preview ? IdeaSecurity.receipt(SCRIPT_URL, previous.submissionId, expectedFiles) : Promise.resolve(null);
+        accepted.then(function (receipt) {
+          if (receipt) { payload = previous; return receipt; }
+          return IdeaAttachments.readFiles(files).then(function (attachments) {
           payload = submission.get(function () {
             var collected = collect();
             collected.attachments = attachments;
             return collected;
           });
-          return IdeaAttachments.send(payload, SCRIPT_URL, preview, function () {
-            btnText.textContent = 'Проверяем отправку…';
+          btnText.textContent = preview ? 'Проверяем...' : 'Отправляем...';
+          return IdeaSecurity.checkTransport(preview).then(function () {
+            btnText.textContent = preview ? 'Проверяем...' : 'Отправляем...';
+            return IdeaAttachments.send(payload, SCRIPT_URL, preview, function () {
+              btnText.textContent = 'Проверяем отправку…';
+            });
+          });
           });
         }).then(function (response) {
           setLoading(false);

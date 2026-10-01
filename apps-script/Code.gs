@@ -49,6 +49,7 @@ var CONFIG = {
                       командой «/start слово».
      TELEGRAM_OFFSET  служебное, скрипт ведёт сам, руками не трогать.
      ATTACHMENTS_FOLDER_ID  ID закрытой папки Google Drive для файлов.
+     SECURITY_TELEGRAM_ALLOWED_CHAT_IDS  разрешённые chat ID через запятую.
 */
 
 /* ============  СООТВЕТСТВИЕ ПОЛЕЙ И КОЛОНОК  ============ */
@@ -106,43 +107,33 @@ function doGet(e) {
 
 function doPost(e) {
   try {
-    var data = parsePayload_(e);
-
-    // Скрытое поле-ловушка: люди его не видят, боты заполняют.
-    if (data.website) return json_({ ok: true, skipped: 'honeypot' });
-
-    // Слишком быстрое заполнение тоже похоже на бота.
-    var elapsed = Number(data.elapsed || 0);
-    if (CONFIG.MIN_SECONDS > 0 && elapsed > 0 && elapsed < CONFIG.MIN_SECONDS) {
-      return json_({ ok: true, skipped: 'too_fast' });
+    var data = parseSecurePayload_(e);
+    // Квитанция уже сохранённой заявки доступна без нового списания лимитов.
+    var existing = cachedReceipt_(data.submissionId);
+    if (existing) return json_({ ok: true, number: existing.number,
+      attachmentCount: existing.attachmentCount, duplicate: true });
+    admitRequest_(data.clientId);
+    validateSecurePayload_(data);
+    if (data.website || data.elapsed < CONFIG.MIN_SECONDS) {
+      throw securityError_('INVALID_PAYLOAD', 'Обновите страницу формы и заполните её ещё раз.');
     }
-
-    var missing = missingFields_(data);
-    if (missing.length) {
-      return json_({ ok: false, error: 'Не заполнены обязательные поля: ' + missing.join(', ') });
-    }
-
     var saved = saveRow_(data);
-
-    // Повтор той же отправки (запасной путь сработал поверх основного):
-    // строка уже есть, второй раз писать и слать уведомления не нужно.
-    // Уведомления обёрнуты в safely_: заявка уже в таблице, и сбой письма
-    // или телеграма не должен возвращать человеку ошибку.
     if (!saved.duplicate) {
       safely_(function () { notifyTelegram_(data, saved.number); });
       safely_(function () { notifyTeam_(data, saved.number, saved.attachments); });
       if (CONFIG.SEND_CONFIRMATION) safely_(function () { notifyAuthor_(data, saved.number); });
     }
-
     return json_({ ok: true, number: saved.number, duplicate: saved.duplicate,
       attachmentCount: saved.attachmentCount });
   } catch (err) {
     logError_(err, e);
-    return json_({ ok: false, error: err && err.attachmentError ? err.message :
-      'Внутренняя ошибка сервиса. Попробуйте ещё раз позже.' });
+    var result = { ok: false, error: err && (err.securityCode || err.attachmentError) ? err.message :
+      'Внутренняя ошибка сервиса. Данные остались в форме. Попробуйте позже.',
+      code: err && err.securityCode || 'SERVICE_ERROR' };
+    if (err && err.retryAfterSeconds) result.retryAfterSeconds = err.retryAfterSeconds;
+    return json_(result);
   }
 }
-
 /* =====================  РАБОТА С ТАБЛИЦЕЙ  ===================== */
 
 function sheet_() {
@@ -170,38 +161,33 @@ function sheet_() {
 
 function saveRow_(data) {
   var lock = LockService.getScriptLock();
-  lock.waitLock(25000);
+  if (!lock.tryLock(200)) throw securityError_('RATE_LIMITED', 'Сервис занят. Попробуйте через несколько секунд.', 5);
   try {
     var cache = CacheService.getScriptCache();
-    var key = clean_(data.submissionId) ? 'sub_' + clean_(data.submissionId) : '';
-
-    // ту же отправку второй раз не записываем, возвращаем номер первой
-    if (key) {
-      var seen = cache.get(key);
-      if (seen) {
-        var receipt = JSON.parse(seen);
-        if (typeof receipt === 'number') receipt = { number: receipt, attachmentCount: 0 };
-        return { number: receipt.number, duplicate: true, attachmentCount: receipt.attachmentCount };
-      }
-    }
-
-    var attachments = attachmentBlobs_(data.attachments);
+    var key = 'sub_' + data.submissionId;
+    var existing = cachedReceipt_(data.submissionId);
+    if (existing) return { number: existing.number, duplicate: true, attachmentCount: existing.attachmentCount };
+    var reservation = reserveDailyBudget_(attachmentBytes_(data.attachments));
+    var attachments = [];
     var files = [];
-    var sh;
-    var number;
-    var row;
+    var sh, number, row;
+    var writeAttempted = false;
+    var storageUncertain = false;
     try {
+      attachments = attachmentBlobs_(data.attachments);
       if (attachments.length) {
         var folder = attachmentsFolder_();
-        attachments.forEach(function (blob) { files.push(folder.createFile(blob)); });
+        attachments.forEach(function (blob) {
+          storageUncertain = true;
+          files.push(folder.createFile(blob));
+          storageUncertain = false;
+        });
       }
-
       sh = sheet_();
-      number = sh.getLastRow(); // строка заголовка занимает первую, поэтому это и есть номер заявки
+      number = sh.getLastRow();
       row = [number, new Date()];
-      FIELDS.forEach(function (f) { row.push(clean_(data[f[0]])); });
+      FIELDS.forEach(function (f) { row.push(sheetText_(data[f[0]])); });
       row.push('Новая', '');
-
       if (files.length) {
         var column = attachmentColumn_(sh);
         while (row.length < column) row.push('');
@@ -209,35 +195,40 @@ function saveRow_(data) {
           return attachments[i].getName() + ': ' + file.getUrl();
         }).join('\n');
       }
-
+      writeAttempted = true;
       sh.appendRow(row);
       var last = sh.getLastRow();
       sh.getRange(last, 1, 1, row.length).setVerticalAlignment('top').setWrap(true);
       sh.getRange(last, 2).setNumberFormat('dd.MM.yyyy HH:mm');
       SpreadsheetApp.flush();
-      if (key) cache.put(key, JSON.stringify({ number: number, attachmentCount: attachments.length }), 1800);
+      cache.put(key, JSON.stringify({ number: number, attachmentCount: attachments.length }), 1800);
     } catch (err) {
-      if (!attachments.length) throw err;
-      try {
-        if (sh && row && sh.getLastRow() === number + 1) {
-          var savedRow = sh.getRange(number + 1, 1, 1, 2).getValues()[0];
-          if (savedRow[0] === number && savedRow[1] instanceof Date &&
-              savedRow[1].getTime() === row[1].getTime()) {
-            sh.deleteRow(number + 1);
+      var clean = !writeAttempted && !storageUncertain;
+      if (attachments.length) {
+        try {
+          if (writeAttempted && sh && row) {
+            if (sh.getLastRow() === number) clean = !storageUncertain;
+            else if (sh.getLastRow() === number + 1) {
+              var savedRow = sh.getRange(number + 1, 1, 1, 2).getValues()[0];
+              if (savedRow[0] === number && savedRow[1] instanceof Date && savedRow[1].getTime() === row[1].getTime()) {
+                sh.deleteRow(number + 1);
+                SpreadsheetApp.flush();
+                clean = !storageUncertain;
+              }
+            }
           }
-        }
-      } catch (cleanupError) { logError_(cleanupError); }
-      files.forEach(function (file) {
-        try { file.setTrashed(true); } catch (cleanupError) { logError_(cleanupError); }
-      });
-      if (err && err.attachmentError) throw err;
+        } catch (cleanupError) { clean = false; logError_(cleanupError); }
+        files.forEach(function (file) {
+          try { file.setTrashed(true); } catch (cleanupError) { clean = false; logError_(cleanupError); }
+        });
+      }
+      // Не возвращаем бюджет, если сохранение или очистка не подтверждены.
+      if (clean) safely_(function () { refundDailyBudget_(reservation); });
+      if (!attachments.length || err && (err.securityCode || err.attachmentError)) throw err;
       throw attachmentError_('Не удалось сохранить заявку с файлами. Попробуйте ещё раз позже.');
     }
-    return { number: number, duplicate: false, attachments: attachments,
-      attachmentCount: attachments.length };
-  } finally {
-    lock.releaseLock();
-  }
+    return { number: number, duplicate: false, attachments: attachments, attachmentCount: attachments.length };
+  } finally { lock.releaseLock(); }
 }
 
 function attachmentError_(message) {
@@ -255,14 +246,11 @@ function attachmentBlobs_(items) {
 
   var mimeTypes = {
     pdf: 'application/pdf',
-    doc: 'application/msword',
     docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    xls: 'application/vnd.ms-excel',
     xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    ppt: 'application/vnd.ms-powerpoint',
     pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     txt: 'text/plain', csv: 'text/csv', jpg: 'image/jpeg', jpeg: 'image/jpeg',
-    png: 'image/png', webp: 'image/webp', gif: 'image/gif', zip: 'application/zip'
+    png: 'image/png', webp: 'image/webp', gif: 'image/gif'
   };
   var total = 0;
   return items.map(function (item) {
@@ -472,7 +460,7 @@ function subsAll_() {
 }
 
 function subsActive_() {
-  return subsAll_().filter(function (s) { return s.status === 'активен'; });
+  return subsAll_().filter(function (s) { return s.status === 'активен' && botRecipientAllowed_(s.id); });
 }
 
 function subsFind_(chatId) {
@@ -490,8 +478,8 @@ function subsAdd_(chat) {
   var name = ((chat.first_name || '') + ' ' + (chat.last_name || '')).trim() || chat.title || 'без имени';
   sh.appendRow([
     String(chat.id),
-    name,
-    chat.username ? '@' + chat.username : '',
+    sheetText_(name),
+    sheetText_(chat.username ? '@' + chat.username : ''),
     new Date(),
     'активен'
   ]);
@@ -597,6 +585,10 @@ function obrabotatSoobshchenie_(m) {
 }
 
 function komandaStart_(chat, arg) {
+  if (!botRecipientAllowed_(chat.id)) {
+    tgSend_(chat.id, 'Доступ к заявкам закрыт. Обратитесь к организатору.');
+    return;
+  }
   var parol = tgProp_('TELEGRAM_PAROL');
   if (parol && arg !== parol) {
     tgSend_(chat.id,
@@ -650,10 +642,19 @@ function komandaHelp_(chat) {
     '/stop отписаться\n' +
     '/last последние ' + CONFIG.TELEGRAM_LAST_COUNT + ' заявок\n' +
     '/help это сообщение\n\n' +
-    'Сейчас вы <b>' + state + '</b>. Всего подписчиков: ' + subsActive_().length + '.');
+    'Сейчас вы <b>' + state + '</b>. Доступ к заявкам выдаёт организатор.');
 }
 
 function komandaLast_(chat) {
+  if (!botRecipientAllowed_(chat.id)) {
+    tgSend_(chat.id, 'Доступ к заявкам закрыт. Обратитесь к организатору.');
+    return;
+  }
+  var subscriber = subsFind_(chat.id);
+  if (!subscriber || subscriber.status !== 'активен') {
+    tgSend_(chat.id, 'Для просмотра заявок оформите разрешённую подписку командой /start.');
+    return;
+  }
   var sh = sheet_();
   var total = sh.getLastRow() - 1;
 
@@ -685,8 +686,8 @@ function komandaLast_(chat) {
    3. Вернитесь в редактор, выберите функцию podklyuchitTelegram и нажмите
       «Выполнить». Скрипт заведёт лист подписчиков, поставит расписание
       и напишет ссылку на бота.
-   4. Ссылку раздайте тем, кто должен получать идеи. Каждый жмёт «Запустить»
-      или отправляет /start и попадает в рассылку.
+   4. В SECURITY_TELEGRAM_ALLOWED_CHAT_IDS внесите проверенные chat ID.
+      Только разрешённые чаты смогут подписаться и просматривать заявки.
 ============================================================== */
 
 function podklyuchitTelegram() {
@@ -795,42 +796,223 @@ function json_(obj) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-function logError_(err, e) {
-  try {
-    console.error(err && err.stack ? err.stack : String(err));
-    if (e && e.postData) console.error('payload: ' + String(e.postData.contents).slice(0, 2000));
-  } catch (ignore) {}
+function logError_(err, e) { safeLogError_(err, e); }
+/* Ручная отправка тестов запрещена: проверяйте через ?preview=1 и локальные тесты. */
+
+var SECURITY = {
+  POST_BYTES: 15 * 1024 * 1024,
+  REQUESTS_PER_MINUTE: 20,
+  CLIENT_REQUESTS_PER_HOUR: 5,
+  CLIENT_INTERVAL_MS: 60000,
+  SUBMISSIONS_PER_DAY: 100,
+  FILE_BYTES_PER_DAY: 200 * 1024 * 1024
+};
+
+function securityError_(code, message, retryAfter) {
+  var err = new Error(message);
+  err.securityCode = code;
+  if (retryAfter) err.retryAfterSeconds = retryAfter;
+  return err;
 }
 
-/* =====================  ПРОВЕРКА ВРУЧНУЮ  =====================
-   Запустите эту функцию один раз из редактора Apps Script
-   (выбрать testSubmit в списке функций и нажать «Выполнить»),
-   чтобы выдать разрешения и убедиться, что строка и письмо уходят.
-============================================================== */
+function secureId_(value) {
+  return typeof value === 'string' && (value.length === 32 || value.length === 36) &&
+    /^(?:[a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})$/i.test(value);
+}
 
-function testSubmit() {
-  var fake = {
-    postData: {
-      contents: JSON.stringify({
-        fullName: 'Иванов Иван Иванович',
-        email: 'test@example.ru',
-        title: 'Тестовая идея',
-        idea: 'Проверяем, что форма доезжает до таблицы.',
-        problem: 'Пока непонятно, работает ли связка.',
-        topic: 'Оптимизация процессов',
-        benefit: 'Убедимся, что всё настроено верно.',
-        metrics: 'экономия 1 час на проверку',
-        resources: 'ничего не нужно',
-        deadline: 'До 1 месяца',
-        lead: 'Отдел развития',
-        participation: 'Готов(а) консультировать',
-        materials: '',
-        consent: 'Да',
-        elapsed: 30,
-        submissionId: 'test-' + new Date().getTime()
-      })
+function cachedReceipt_(id) {
+  if (!secureId_(id)) return null;
+  var raw = CacheService.getScriptCache().get('sub_' + id);
+  if (!raw) return null;
+  var receipt = JSON.parse(raw);
+  if (typeof receipt === 'number') receipt = { number: receipt, attachmentCount: 0 };
+  if (!receipt || !Number.isSafeInteger(receipt.number) || receipt.number < 1 ||
+      !Number.isSafeInteger(receipt.attachmentCount) || receipt.attachmentCount < 0 ||
+      receipt.attachmentCount > CONFIG.MAX_ATTACHMENTS) return null;
+  return receipt;
+}
+
+function parseSecurePayload_(e) {
+  if (!e || !e.postData || typeof e.postData.contents !== 'string') {
+    throw securityError_('INVALID_PAYLOAD', 'Некорректный запрос формы. Обновите страницу.');
+  }
+  var raw = e.postData.contents;
+  if (raw.length > SECURITY.POST_BYTES || Number(e.contentLength || e.postData.length || 0) > SECURITY.POST_BYTES) {
+    throw securityError_('PAYLOAD_TOO_LARGE', 'Размер запроса превышает допустимый предел.');
+  }
+  if (Utilities.newBlob(raw).getBytes().length > SECURITY.POST_BYTES) {
+    throw securityError_('PAYLOAD_TOO_LARGE', 'Размер запроса превышает допустимый предел.');
+  }
+  var data;
+  try { data = JSON.parse(raw); } catch (err) {
+    throw securityError_('INVALID_PAYLOAD', 'Некорректный запрос формы. Обновите страницу.');
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw securityError_('INVALID_PAYLOAD', 'Некорректный запрос формы. Обновите страницу.');
+  }
+  return data;
+}
+
+function validateSecurePayload_(data) {
+  var limits = { fullName: 200, email: 254, title: 150, idea: 4000, problem: 4000,
+    topic: 80, benefit: 4000, metrics: 300, resources: 4000, deadline: 80,
+    lead: 200, participation: 100, materials: 500, consent: 3 };
+  Object.keys(limits).forEach(function (key) {
+    var value = data[key];
+    if (value === undefined && REQUIRED.indexOf(key) === -1 && key !== 'consent') return;
+    if (typeof value !== 'string' || value.length > limits[key] || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value)) {
+      throw securityError_('INVALID_FIELD', 'Некорректное поле формы: ' + key + '.');
     }
+    if (REQUIRED.indexOf(key) !== -1 && !value.trim()) {
+      throw securityError_('INVALID_FIELD', 'Заполните обязательное поле: ' + key + '.');
+    }
+  });
+  if (!isEmail_(data.email) || data.consent !== 'Да' || !secureId_(data.submissionId) || !secureId_(data.clientId)) {
+    throw securityError_('INVALID_FIELD', 'Проверьте почту и согласие. Если ошибка повторяется, обновите страницу.');
+  }
+  var choices = {
+    topic: ['Оптимизация процессов', 'Сокращение затрат', 'Рост ТО', 'Идеи про продукты', 'Прочее'],
+    deadline: ['До 1 месяца', '1–3 месяца', '3–6 месяцев', 'Более 6 месяцев', 'Пока сложно оценить'],
+    participation: ['Да, готов(а) стать руководителем', 'Да, готов(а) участвовать в команде', 'Готов(а) консультировать', 'Нет, хочу только предложить идею']
   };
-  var res = doPost(fake);
-  console.log(res.getContent());
+  Object.keys(choices).forEach(function (key) {
+    if (choices[key].indexOf(data[key]) === -1) throw securityError_('INVALID_FIELD', 'Выберите допустимый вариант: ' + key + '.');
+  });
+  if (data.materials && !/^https?:\/\/[^\s]+$/i.test(data.materials)) {
+    throw securityError_('INVALID_FIELD', 'Ссылка на материалы должна начинаться с https:// или http://.');
+  }
+  if (!Number.isSafeInteger(data.elapsed) || data.elapsed < 0 || data.elapsed > 86400 ||
+      (data.website !== undefined && (typeof data.website !== 'string' || data.website.length > 200))) {
+    throw securityError_('INVALID_FIELD', 'Обновите страницу формы и попробуйте снова.');
+  }
+  var allowedKeys = Object.keys(limits).concat(['submissionId', 'clientId', 'attachments', 'website', 'elapsed', 'page']);
+  if (Object.keys(data).some(function (key) { return allowedKeys.indexOf(key) === -1; })) {
+    throw securityError_('INVALID_PAYLOAD', 'Запрос содержит неизвестные поля. Обновите страницу формы.');
+  }
+  if (data.page !== undefined && (typeof data.page !== 'string' || data.page.length > 2000)) {
+    throw securityError_('INVALID_FIELD', 'Некорректный адрес страницы формы.');
+  }
+  attachmentBytes_(data.attachments);
+}
+
+function attachmentBytes_(items) {
+  if (items === undefined) return 0;
+  if (!Array.isArray(items) || items.length > CONFIG.MAX_ATTACHMENTS) {
+    throw securityError_('INVALID_FILES', 'Можно прикрепить не более пяти файлов.');
+  }
+  var total = 0;
+  items.forEach(function (item) {
+    if (!item || typeof item !== 'object' || !Number.isSafeInteger(item.size) || item.size < 1 ||
+        typeof item.name !== 'string' || item.name.length > 255 || typeof item.base64 !== 'string' ||
+        !item.base64.length || item.base64.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(item.base64)) {
+      throw securityError_('INVALID_FILES', 'Некорректные данные прикреплённого файла.');
+    }
+    var padding = item.base64.slice(-2) === '==' ? 2 : item.base64.slice(-1) === '=' ? 1 : 0;
+    if (item.base64.length / 4 * 3 - padding !== item.size ||
+        !/\.(pdf|docx|xlsx|pptx|txt|csv|jpg|jpeg|png|webp|gif)$/i.test(item.name)) {
+      throw securityError_('INVALID_FILES', 'Проверьте размер и формат прикреплённого файла.');
+    }
+    total += item.size;
+    if (total > CONFIG.MAX_ATTACHMENT_BYTES) throw securityError_('INVALID_FILES', 'Общий размер файлов не должен превышать 10 МБ.');
+  });
+  return total;
+}
+
+function readSecurityProperty_(props, key, fallback) {
+  var raw = props.getProperty(key);
+  if (!raw) return fallback;
+  try { return JSON.parse(raw); } catch (err) {
+    throw securityError_('PROTECTION_UNAVAILABLE', 'Защита сервиса временно недоступна. Попробуйте позже.');
+  }
+}
+
+function clientHash_(id) {
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, id, Utilities.Charset.UTF_8)
+    .map(function (byte) { return ('0' + ((byte + 256) % 256).toString(16)).slice(-2); }).join('');
+}
+
+function admitRequest_(clientId) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(200)) throw securityError_('RATE_LIMITED', 'Сервис занят. Попробуйте через несколько секунд.', 5);
+  try {
+    var now = Date.now();
+    var props = PropertiesService.getScriptProperties();
+    var globalTimes = readSecurityProperty_(props, 'SECURITY_RATE_WINDOW', []);
+    if (!Array.isArray(globalTimes) || globalTimes.some(function (t) { return !Number.isSafeInteger(t) || t > now; })) {
+      throw securityError_('PROTECTION_UNAVAILABLE', 'Защита сервиса временно недоступна. Попробуйте позже.');
+    }
+    globalTimes = globalTimes.filter(function (t) { return t > now - 60000; });
+    if (globalTimes.length >= SECURITY.REQUESTS_PER_MINUTE) {
+      throw securityError_('RATE_LIMITED', 'Слишком много отправок. Попробуйте через минуту.', Math.max(1, Math.ceil((globalTimes[0] + 60000 - now) / 1000)));
+    }
+    // Кэш браузерных ограничений отделён от ScriptCache с квитанциями.
+    globalTimes.push(now);
+    props.setProperty('SECURITY_RATE_WINDOW', JSON.stringify(globalTimes));
+    if (!secureId_(clientId)) return;
+    var cache = CacheService.getUserCache();
+    var key = 'security_client_' + clientHash_(clientId);
+    var times = [];
+    try { times = JSON.parse(cache.get(key) || '[]'); } catch (err) {}
+    if (!Array.isArray(times)) times = [];
+    times = times.filter(function (t) { return Number.isSafeInteger(t) && t <= now && t > now - 3600000; });
+    var wait = times.length && times[times.length - 1] + SECURITY.CLIENT_INTERVAL_MS - now;
+    if (wait > 0 || times.length >= SECURITY.CLIENT_REQUESTS_PER_HOUR) {
+      var retry = wait > 0 ? wait : times[0] + 3600000 - now;
+      throw securityError_('RATE_LIMITED', 'Слишком частые отправки из этого браузера. Попробуйте позже.', Math.max(1, Math.ceil(retry / 1000)));
+    }
+    times.push(now);
+    cache.put(key, JSON.stringify(times), 3600);
+  } catch (err) {
+    if (err.securityCode) throw err;
+    throw securityError_('PROTECTION_UNAVAILABLE', 'Защита сервиса временно недоступна. Попробуйте позже.');
+  } finally { lock.releaseLock(); }
+}
+
+function dailyState_(props) {
+  var day = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  var state = readSecurityProperty_(props, 'SECURITY_DAILY_BUDGET', { day: day, submissions: 0, bytes: 0 });
+  if (!state || typeof state.day !== 'string' || !Number.isSafeInteger(state.submissions) || state.submissions < 0 ||
+      !Number.isSafeInteger(state.bytes) || state.bytes < 0) {
+    throw securityError_('PROTECTION_UNAVAILABLE', 'Защита сервиса временно недоступна. Попробуйте позже.');
+  }
+  return state.day === day ? state : { day: day, submissions: 0, bytes: 0 };
+}
+
+function reserveDailyBudget_(bytes) {
+  var props = PropertiesService.getScriptProperties();
+  var state = dailyState_(props);
+  if (state.submissions >= SECURITY.SUBMISSIONS_PER_DAY || state.bytes + bytes > SECURITY.FILE_BYTES_PER_DAY) {
+    throw securityError_('DAILY_LIMIT', 'Достигнут дневной лимит сервиса. Попробуйте завтра или свяжитесь с организатором.');
+  }
+  state.submissions++;
+  state.bytes += bytes;
+  props.setProperty('SECURITY_DAILY_BUDGET', JSON.stringify(state));
+  return { day: state.day, bytes: bytes };
+}
+
+function refundDailyBudget_(reservation) {
+  if (!reservation) return;
+  var props = PropertiesService.getScriptProperties();
+  var state = dailyState_(props);
+  if (state.day !== reservation.day) return;
+  state.submissions = Math.max(0, state.submissions - 1);
+  state.bytes = Math.max(0, state.bytes - reservation.bytes);
+  props.setProperty('SECURITY_DAILY_BUDGET', JSON.stringify(state));
+}
+
+function sheetText_(value) {
+  var text = clean_(value);
+  return /^[=+@-]/.test(text) ? "'" + text : text;
+}
+
+function botRecipientAllowed_(id) {
+  var allowed = tgProp_('SECURITY_TELEGRAM_ALLOWED_CHAT_IDS').split(',').map(function (value) { return value.trim(); }).filter(Boolean);
+  return allowed.indexOf(String(id)) !== -1;
+}
+
+function safeLogError_(err, e) {
+  try {
+    console.error(JSON.stringify({ code: err && (err.securityCode || err.name) || 'ServiceError',
+      time: new Date().toISOString(), requestBytes: e && Number(e.contentLength) || undefined }));
+  } catch (ignore) {}
 }
