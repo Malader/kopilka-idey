@@ -75,7 +75,30 @@ var REQUIRED = ['fullName', 'email', 'title', 'idea', 'problem', 'topic',
 
 /* =====================  ТОЧКИ ВХОДА  ===================== */
 
-function doGet() {
+function doGet(e) {
+  if (e && e.parameter && Object.prototype.hasOwnProperty.call(e.parameter, 'receipt')) {
+    var id = e.parameter.receipt;
+    if (typeof id !== 'string' || (id.length !== 32 && id.length !== 36) ||
+        !/^(?:[a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})$/i.test(id)) {
+      return json_({ ok: false, error: 'Некорректный идентификатор отправки.' });
+    }
+
+    try {
+      var seen = CacheService.getScriptCache().get('sub_' + id);
+      if (!seen) return json_({ ok: false, pending: true });
+      var receipt = JSON.parse(seen);
+      if (typeof receipt === 'number') receipt = { number: receipt, attachmentCount: 0 };
+      if (!receipt || !Number.isSafeInteger(receipt.number) || receipt.number <= 0 ||
+          !Number.isSafeInteger(receipt.attachmentCount) || receipt.attachmentCount < 0 ||
+          receipt.attachmentCount > CONFIG.MAX_ATTACHMENTS) {
+        return json_({ ok: false, pending: true });
+      }
+      return json_({ ok: true, number: receipt.number, attachmentCount: receipt.attachmentCount });
+    } catch (err) {
+      return json_({ ok: false, pending: true });
+    }
+  }
+
   return ContentService
     .createTextOutput('Копилка идей: сервис приёма заявок работает.')
     .setMimeType(ContentService.MimeType.TEXT);
@@ -191,6 +214,7 @@ function saveRow_(data) {
       var last = sh.getLastRow();
       sh.getRange(last, 1, 1, row.length).setVerticalAlignment('top').setWrap(true);
       sh.getRange(last, 2).setNumberFormat('dd.MM.yyyy HH:mm');
+      SpreadsheetApp.flush();
       if (key) cache.put(key, JSON.stringify({ number: number, attachmentCount: attachments.length }), 1800);
     } catch (err) {
       if (!attachments.length) throw err;

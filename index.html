@@ -1011,32 +1011,124 @@
         return !!(response && response.ok === true && typeof response.number === 'number' && Number.isSafeInteger(response.number) && response.number > 0);
       }
 
-      function send(payload, endpoint, preview) {
+      function newId() {
+        try {
+          if (typeof crypto !== 'undefined') {
+            if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+            if (typeof crypto.getRandomValues === 'function') {
+              var bytes = crypto.getRandomValues(new Uint8Array(16));
+              return Array.prototype.map.call(bytes, function (byte) { return ('0' + byte.toString(16)).slice(-2); }).join('');
+            }
+          }
+        } catch (e) {}
+        return String(Date.now()) + '-' + Math.random().toString(36).slice(2, 10);
+      }
+
+      function send(payload, endpoint, preview, onProgress) {
         if (preview) return Promise.resolve({ demo: true });
         if (!endpoint) return Promise.reject(new Error('Отправка ещё не настроена. Пожалуйста, сообщите организатору.'));
-        var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        var id = payload.submissionId;
+        var canCheckReceipt = typeof id === 'string' && (/^[a-f0-9]{32}$/i.test(id) || /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(id));
+        var expectedFiles = payload.attachments ? payload.attachments.length : 0;
+        var postController = typeof AbortController !== 'undefined' ? new AbortController() : null;
         return new Promise(function (resolve, reject) {
-          var timer = setTimeout(function () {
-            if (controller) controller.abort();
-            reject(new Error('Сервер не подтвердил отправку вовремя. Данные и файлы остались в форме. Попробуйте отправить ещё раз.'));
-          }, 60000);
+          var settled = false;
+          var recovering = false;
+          var progressed = false;
+          var getController = null;
+          var pollTimer = null;
+          var getTimer = null;
+          var slowTimer = setTimeout(function () { showProgress(); recover(); }, 30000);
+          var deadlineTimer = setTimeout(function () {
+            finish(false, new Error('Сервер не подтвердил отправку вовремя. Данные и файлы остались в форме. Попробуйте отправить ещё раз.'));
+          }, 180000);
+
+          function showProgress() {
+            if (settled || progressed) return;
+            progressed = true;
+            if (typeof onProgress === 'function') {
+              try { onProgress(); } catch (e) {}
+            }
+          }
+
+          function finish(ok, value) {
+            if (settled) return;
+            settled = true;
+            clearTimeout(slowTimer);
+            clearTimeout(deadlineTimer);
+            clearTimeout(pollTimer);
+            clearTimeout(getTimer);
+            if (postController) postController.abort();
+            if (getController) getController.abort();
+            if (ok) resolve(value);
+            else reject(value);
+          }
+
+          function recover(error) {
+            if (settled) return;
+            if (!canCheckReceipt) {
+              if (error) finish(false, error);
+              return;
+            }
+            if (recovering) return;
+            recovering = true;
+            clearTimeout(slowTimer);
+            showProgress();
+            pollReceipt();
+          }
+
+          function pollReceipt() {
+            if (settled) return;
+            var attemptDone = false;
+            getController = typeof AbortController !== 'undefined' ? new AbortController() : null;
+            var controller = getController;
+            var options = { method: 'GET', cache: 'no-store' };
+            if (controller) options.signal = controller.signal;
+            var receiptUrl = endpoint + (endpoint.indexOf('?') === -1 ? '?' : '&') + 'receipt=' + encodeURIComponent(id);
+
+            function completeAttempt(response) {
+              if (settled || attemptDone) return;
+              attemptDone = true;
+              clearTimeout(getTimer);
+              getController = null;
+              if (isConfirmed(response) && response.attachmentCount === expectedFiles) {
+                finish(true, response);
+              } else {
+                pollTimer = setTimeout(pollReceipt, 5000);
+              }
+            }
+
+            getTimer = setTimeout(function () {
+              if (controller) controller.abort();
+              completeAttempt(null);
+            }, 10000);
+            Promise.resolve().then(function () { return fetch(receiptUrl, options); })
+              .then(function (response) { return response.ok ? response.json() : null; })
+              .then(completeAttempt).catch(function () { completeAttempt(null); });
+          }
+
           var options = { method: 'POST', body: JSON.stringify(payload) };
-          if (controller) options.signal = controller.signal;
+          if (postController) options.signal = postController.signal;
           Promise.resolve().then(function () { return fetch(endpoint, options); })
             .then(function (response) {
               if (!response.ok) throw new Error('Сервис временно недоступен. Данные и файлы остались в форме. Попробуйте ещё раз.');
               return response.json();
             }).then(function (response) {
-              if (!isConfirmed(response)) throw new Error(response && response.error || 'Сервер не подтвердил отправку заявки. Данные и файлы остались в форме. Попробуйте ещё раз.');
-              if (payload.attachments && payload.attachments.length > 0 && response.attachmentCount !== payload.attachments.length) {
-                throw new Error('Сервис не подтвердил приём файлов. Данные и файлы остались в форме. Попробуйте позже или сообщите организатору.');
+              if (settled) return;
+              if (response && (response.ok === false || response.error)) {
+                finish(false, new Error(response.error || 'Сервер не подтвердил отправку заявки. Данные и файлы остались в форме. Попробуйте ещё раз.'));
+                return;
               }
-              clearTimeout(timer);
-              resolve(response);
-            }).catch(function (error) {
-              clearTimeout(timer);
-              reject(error);
-            });
+              if (!isConfirmed(response)) {
+                recover(new Error('Сервер не подтвердил отправку заявки. Данные и файлы остались в форме. Попробуйте ещё раз.'));
+                return;
+              }
+              if ((expectedFiles > 0 || response.attachmentCount !== undefined) && response.attachmentCount !== expectedFiles) {
+                finish(false, new Error('Сервис не подтвердил приём файлов. Данные и файлы остались в форме. Попробуйте позже или сообщите организатору.'));
+                return;
+              }
+              finish(true, response);
+            }).catch(recover);
         });
       }
 
@@ -1055,7 +1147,7 @@
       }
 
       return { addFiles: addFiles, readFiles: readFiles, validateFiles: validateFiles,
-        isConfirmed: isConfirmed, send: send, submissionState: submissionState, sizeLabel: sizeLabel };
+        isConfirmed: isConfirmed, send: send, submissionState: submissionState, sizeLabel: sizeLabel, newId: newId };
     })();
   </script>
   <script>
@@ -1158,10 +1250,7 @@
       }
 
       function newId() {
-        try {
-          if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
-        } catch (e) {}
-        return String(Date.now()) + '-' + Math.random().toString(36).slice(2, 10);
+        return IdeaAttachments.newId();
       }
 
       function setLoading(on) {
@@ -1341,7 +1430,9 @@
             collected.attachments = attachments;
             return collected;
           });
-          return IdeaAttachments.send(payload, SCRIPT_URL, preview);
+          return IdeaAttachments.send(payload, SCRIPT_URL, preview, function () {
+            btnText.textContent = 'Проверяем отправку…';
+          });
         }).then(function (response) {
           setLoading(false);
           showSuccess(payload, response);
